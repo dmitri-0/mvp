@@ -96,13 +96,11 @@ class MainWindow(QMainWindow):
         self.tree_notes.setHeaderLabel("Notes")
         self.tree_notes.currentItemChanged.connect(self.on_note_selected)
         self.tree_notes.setSelectionMode(QTreeWidget.ExtendedSelection)
-        # Удален eventFilter
 
         # Правая панель - редактор
         self.editor = NoteEditor()
         self.editor.setAcceptRichText(True)
         self.editor.set_context(self.repo, lambda: self.current_note_id)
-        # Удален eventFilter
 
         # Применение шрифта
         self._apply_font()
@@ -170,7 +168,6 @@ class MainWindow(QMainWindow):
             self.toggle_focus_shortcut.activated.connect(self.toggle_focus)
 
         # F4 - добавить заметку
-        # Используем QShortcut с привязкой к self
         if not hasattr(self, 'add_note_shortcut'):
             self.add_note_shortcut = QShortcut(QKeySequence("F4"), self)
             self.add_note_shortcut.activated.connect(self.add_note)
@@ -247,13 +244,34 @@ class MainWindow(QMainWindow):
             self._setup_shortcuts()
             # Применение новых настроек
             self._apply_font()
-            # Обновить текущую заметку чтобы применился шрифт (если есть)
+            # Перезагрузить текущую заметку чтобы обновился шрифт
             if self.current_note_id:
+                self._reload_current_note()
+
+    def _reload_current_note(self):
+        """Перезагрузка текущей заметки для применения новых настроек"""
+        if not self.current_note_id:
+            return
+        
+        cursor_pos = self.editor.textCursor().position()
+        notes = self.repo.get_all_notes()
+        
+        for nid, _, title, body_html, _, _ in notes:
+            if nid == self.current_note_id:
+                self.editor.blockSignals(True)
+                self.editor.setHtml(body_html or "")
+                
+                # Восстановление курсора
                 cursor = self.editor.textCursor()
-                pos = cursor.position()
-                self.editor.setHtml(self.editor.toHtml())
-                cursor.setPosition(pos)
+                if cursor_pos <= len(self.editor.toPlainText()):
+                    cursor.setPosition(cursor_pos)
+                else:
+                    cursor.movePosition(QTextCursor.End)
                 self.editor.setTextCursor(cursor)
+                self.editor.ensureCursorVisible()
+                
+                self.editor.blockSignals(False)
+                break
 
     def _select_note_by_id(self, note_id):
         """Выбрать заметку по ID в дереве"""
