@@ -19,8 +19,20 @@ class TrayController:
         menu.addAction(act_toggle)
         menu.addAction(act_quit)
         self.tray.setContextMenu(menu)
-        self.tray.activated.connect(lambda _: self.toggle())
-        self.tray.show()
+        
+        # Подключаем обработчик активации трея
+        # Используем lambda только для клика по иконке
+        self.tray.activated.connect(self._on_tray_activated)
+        
+        # Показываем иконку трея только один раз при создании
+        if not self.tray.isVisible():
+            self.tray.show()
+
+    def _on_tray_activated(self, reason):
+        """Обработчик активации трея"""
+        # Реагируем только на клик левой кнопкой мыши
+        if reason == QSystemTrayIcon.Trigger:
+            self.toggle()
 
     def toggle(self):
         """Переключение видимости окна"""
