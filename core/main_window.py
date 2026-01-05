@@ -1,6 +1,6 @@
 from datetime import datetime
 import sys
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QEvent
 from PySide6.QtGui import QFont, QTextDocument, QKeySequence, QShortcut, QImage, QTextCursor, QTextCharFormat
 from PySide6.QtWidgets import (
     QMainWindow, QTreeWidget, QTreeWidgetItem, QTreeWidgetItemIterator, QSplitter,
@@ -45,7 +45,7 @@ class SettingsDialog(QDialog):
             current_focus_key = hotkeys["local"].get("toggle_focus", "F3")
         else:
             current_focus_key = hotkeys.get("toggle_focus", "F3")
-            
+
         self.focus_key_edit = QLineEdit(current_focus_key)
         layout.addRow("Смена фокуса:", self.focus_key_edit)
 
@@ -101,7 +101,8 @@ class MainWindow(QMainWindow):
         # Правая панель - редактор
         self.editor = NoteEditor()
         self.editor.setAcceptRichText(True)
-        self.editor.set_context(self.repo, lambda: self.current_note_id)
+        self.editor.set_context(self.repo)
+        self.editor.focusOut.connect(self._on_editor_focus_out)
 
         # Применение шрифта
         self._apply_font()
@@ -113,17 +114,13 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(1, 3)
         self.setCentralWidget(splitter)
 
-        # Автосохранение с debounce
-        self._save_timer = QTimer(self)
-        self._save_timer.setSingleShot(True)
-        self._save_timer.timeout.connect(self.save_current_note)
-        self.editor.textChanged.connect(lambda: self._save_timer.start(500))
-        # Отслеживание позиции курсора
-        self.editor.cursorPositionChanged.connect(lambda: self._save_timer.start(1000))
-
-        self.current_note_id = None
+        self.current_note_id = None  # id заметки, загруженной в редактор
         self.focused_widget = self.tree_notes
         self.toggle_focus_shortcut = None  # Ссылка на шорткат
+
+        # Флаги защиты от гонок событий
+        self._is_switching_note = False
+        self._is_reloading_tree = False
 
         # Шорткаты
         self._setup_shortcuts()
@@ -146,7 +143,7 @@ class MainWindow(QMainWindow):
         self.editor.setStyleSheet(
             f"QTextEdit {{ font-family: '{font_family}'; font-size: {font_size}pt; }}"
         )
-        
+
         # Принудительное обновление размера шрифта во всем документе (без сброса других стилей)
         self._force_font_size(font_size)
 
@@ -155,19 +152,19 @@ class MainWindow(QMainWindow):
         cursor = self.editor.textCursor()
         if not cursor:
             return
-            
+
         # Сохраняем позицию
         pos = cursor.position()
         anchor = cursor.anchor()
-        
+
         # Выделяем все
         cursor.select(QTextCursor.Document)
-        
+
         # Применяем только размер шрифта
         fmt = QTextCharFormat()
         fmt.setFontPointSize(size)
         cursor.mergeCharFormat(fmt)
-        
+
         # Восстанавливаем позицию
         cursor.setPosition(anchor)
         cursor.setPosition(pos, QTextCursor.KeepAnchor)
@@ -177,16 +174,16 @@ class MainWindow(QMainWindow):
         """Настройка горячих клавиш"""
         # Смена фокуса
         hotkeys = self.config.get("hotkeys", {})
-        
+
         # Безопасное получение локальных настроек
         if "local" in hotkeys:
             local_keys = hotkeys["local"]
         else:
             # Fallback для старых конфигов или если миграция не прошла
             local_keys = hotkeys
-            
+
         focus_key = local_keys.get("toggle_focus", "F3")
-        
+
         # Обновляем или создаем шорткат
         if self.toggle_focus_shortcut:
             self.toggle_focus_shortcut.setKey(QKeySequence(focus_key))
@@ -198,7 +195,7 @@ class MainWindow(QMainWindow):
         if not hasattr(self, 'add_note_shortcut'):
             self.add_note_shortcut = QShortcut(QKeySequence("F4"), self)
             self.add_note_shortcut.activated.connect(self.add_note)
-            
+
         if not hasattr(self, 'del_note_shortcut'):
             self.del_note_shortcut = QShortcut(QKeySequence("F8"), self)
             self.del_note_shortcut.activated.connect(self.delete_notes)
@@ -211,14 +208,49 @@ class MainWindow(QMainWindow):
     def toggle_focus(self):
         """Переключение фокуса между деревом и редактором"""
         if self.editor.hasFocus():
+            # ключевой момент: редактор теряет фокус -> сохраняем
+            self.save_current_note()
             self.tree_notes.setFocus()
             self.focused_widget = self.tree_notes
         else:
             self.editor.setFocus()
             self.focused_widget = self.editor
 
+    def _find_item_by_id(self, note_id: int):
+        iterator = QTreeWidgetItemIterator(self.tree_notes)
+        while iterator.value():
+            item = iterator.value()
+            if item.data(0, Qt.UserRole) == note_id:
+                return item
+            iterator += 1
+        return None
+
+    def _save_editor_content(self, note_id: int, title: str | None = None):
+        """Сохранение содержимого редактора в указанную заметку.
+
+        Важно: note_id должен соответствовать тому, что сейчас загружено в редактор.
+        """
+        if not note_id:
+            return
+
+        html = self.editor.toHtml()
+        cursor_pos = self.editor.textCursor().position()
+
+        if title is None:
+            # Берем title максимально надежно
+            item = self._find_item_by_id(note_id)
+            if item is not None:
+                title = item.text(0)
+            else:
+                row = self.repo.get_note(note_id)
+                title = row[2] if row else ""
+
+        self.repo.save_note(note_id, title, html, cursor_pos)
+
     def add_note(self):
         """Добавление новой заметки с автоматическим именованием"""
+        self.save_current_note()
+
         current_root = self.repo.get_note_by_title("Текущие")
         if not current_root:
             current_root_id = self.repo.create_note(None, "Текущие")
@@ -255,12 +287,24 @@ class MainWindow(QMainWindow):
         )
 
         if reply == QMessageBox.Yes:
+            # Если среди удаляемых есть текущая заметка, сперва сохраняем
+            if self.current_note_id:
+                for item in selected_items:
+                    if item.data(0, Qt.UserRole) == self.current_note_id:
+                        self.save_current_note()
+                        break
+
             for item in selected_items:
                 note_id = item.data(0, Qt.UserRole)
                 if note_id:
                     self.repo.delete_note(note_id)
 
             self.current_note_id = None
+            self.editor.set_current_note_id(None)
+            self.editor.blockSignals(True)
+            self.editor.clear()
+            self.editor.blockSignals(False)
+
             self.load_notes_tree()
 
     def open_settings(self):
@@ -279,30 +323,31 @@ class MainWindow(QMainWindow):
         """Перезагрузка текущей заметки для применения новых настроек"""
         if not self.current_note_id:
             return
-        
-        cursor_pos = self.editor.textCursor().position()
-        notes = self.repo.get_all_notes()
-        
-        for nid, _, title, body_html, _, _ in notes:
-            if nid == self.current_note_id:
-                self.editor.blockSignals(True)
-                self.editor.setHtml(body_html or "")
-                
-                # Принудительно применяем шрифт при перезагрузке
-                font_size = self.config.get("font_size", 11)
-                self._force_font_size(font_size)
 
-                # Восстановление курсора
-                cursor = self.editor.textCursor()
-                if cursor_pos <= len(self.editor.toPlainText()):
-                    cursor.setPosition(cursor_pos)
-                else:
-                    cursor.movePosition(QTextCursor.End)
-                self.editor.setTextCursor(cursor)
-                self.editor.ensureCursorVisible()
-                
-                self.editor.blockSignals(False)
-                break
+        cursor_pos = self.editor.textCursor().position()
+        row = self.repo.get_note(self.current_note_id)
+        if not row:
+            return
+
+        _, _, _, body_html, _, _ = row
+
+        self.editor.blockSignals(True)
+        self.editor.setHtml(body_html or "")
+
+        # Принудительно применяем шрифт при перезагрузке
+        font_size = self.config.get("font_size", 11)
+        self._force_font_size(font_size)
+
+        # Восстановление курсора
+        cursor = self.editor.textCursor()
+        if cursor_pos <= len(self.editor.toPlainText()):
+            cursor.setPosition(cursor_pos)
+        else:
+            cursor.movePosition(QTextCursor.End)
+        self.editor.setTextCursor(cursor)
+        self.editor.ensureCursorVisible()
+
+        self.editor.blockSignals(False)
 
     def _select_note_by_id(self, note_id):
         """Выбрать заметку по ID в дереве"""
@@ -316,108 +361,159 @@ class MainWindow(QMainWindow):
 
     def load_notes_tree(self):
         """Загрузка дерева заметок из БД"""
-        # Сохраняем состояние раскрытия
-        expanded_ids = set()
-        iterator = QTreeWidgetItemIterator(self.tree_notes)
-        while iterator.value():
-            item = iterator.value()
-            if item.isExpanded():
-                expanded_ids.add(item.data(0, Qt.UserRole))
-            iterator += 1
+        self._is_reloading_tree = True
+        self.tree_notes.blockSignals(True)
 
-        self.tree_notes.clear()
-        notes = self.repo.get_all_notes()
-
-        items_map = {}
-        root_items = []
-
-        for note_id, parent_id, title, body_html, cursor_pos, updated_at in notes:
-            item = QTreeWidgetItem([title])
-            item.setData(0, Qt.UserRole, note_id)
-            items_map[note_id] = item
-
-            if parent_id is None:
-                root_items.append(item)
-            else:
-                if parent_id in items_map:
-                    items_map[parent_id].addChild(item)
-                else:
-                    root_items.append(item)
-
-        self.tree_notes.addTopLevelItems(root_items)
-
-        # Восстанавливаем состояние раскрытия или раскрываем всё если пусто
-        if not expanded_ids:
-            self.tree_notes.expandAll()
-        else:
+        try:
+            # Сохраняем состояние раскрытия
+            expanded_ids = set()
             iterator = QTreeWidgetItemIterator(self.tree_notes)
             while iterator.value():
                 item = iterator.value()
-                if item.data(0, Qt.UserRole) in expanded_ids:
-                    item.setExpanded(True)
+                if item.isExpanded():
+                    expanded_ids.add(item.data(0, Qt.UserRole))
                 iterator += 1
+
+            current_selected_id = None
+            cur_item = self.tree_notes.currentItem()
+            if cur_item is not None:
+                current_selected_id = cur_item.data(0, Qt.UserRole)
+
+            self.tree_notes.clear()
+            notes = self.repo.get_all_notes()
+
+            # 1) создаем все item'ы
+            items_map: dict[int, QTreeWidgetItem] = {}
+            for note_id, parent_id, title, body_html, cursor_pos, updated_at in notes:
+                item = QTreeWidgetItem([title])
+                item.setData(0, Qt.UserRole, note_id)
+                items_map[note_id] = item
+
+            # 2) собираем иерархию (порядок в БД теперь не важен)
+            root_items = []
+            for note_id, parent_id, title, body_html, cursor_pos, updated_at in notes:
+                item = items_map[note_id]
+                if parent_id is None or parent_id not in items_map:
+                    root_items.append(item)
+                else:
+                    items_map[parent_id].addChild(item)
+
+            self.tree_notes.addTopLevelItems(root_items)
+
+            # Восстанавливаем состояние раскрытия или раскрываем всё если пусто
+            if not expanded_ids:
+                self.tree_notes.expandAll()
+            else:
+                iterator = QTreeWidgetItemIterator(self.tree_notes)
+                while iterator.value():
+                    item = iterator.value()
+                    if item.data(0, Qt.UserRole) in expanded_ids:
+                        item.setExpanded(True)
+                    iterator += 1
+
+            # Восстанавливаем выделение (если было)
+            if current_selected_id:
+                item = items_map.get(current_selected_id)
+                if item is not None:
+                    self.tree_notes.setCurrentItem(item)
+
+        finally:
+            self.tree_notes.blockSignals(False)
+            self._is_reloading_tree = False
 
     def on_note_selected(self, current_item, previous_item):
         """Переключение на другую заметку"""
-        if previous_item and self.current_note_id:
-            self.save_current_note()
+        if self._is_reloading_tree:
+            return
+
+        # Важно: currentItemChanged вызывается когда текущий элемент уже изменен.
+        # Поэтому сохранение нужно делать по previous_item / previous_note_id.
+        previous_note_id = None
+        if previous_item is not None:
+            previous_note_id = previous_item.data(0, Qt.UserRole)
+
+        if previous_note_id and self.current_note_id == previous_note_id:
+            # В редакторе сейчас ещё текст предыдущей заметки -> сохраняем её
+            self._save_editor_content(previous_note_id, previous_item.text(0))
 
         if not current_item:
+            self.current_note_id = None
+            self.editor.set_current_note_id(None)
             return
 
         note_id = current_item.data(0, Qt.UserRole)
-        self.current_note_id = note_id
 
-        # Сохраняем ID открытой заметки
-        self.repo.set_state("last_opened_note_id", note_id)
+        self._is_switching_note = True
+        try:
+            self.current_note_id = note_id
+            self.editor.set_current_note_id(note_id)
 
-        # Загрузить содержимое заметки
-        notes = self.repo.get_all_notes()
-        for nid, _, title, body_html, cursor_pos, _ in notes:
-            if nid == note_id:
+            # Сохраняем ID открытой заметки
+            self.repo.set_state("last_opened_note_id", note_id)
+
+            row = self.repo.get_note(note_id)
+            if not row:
                 self.editor.blockSignals(True)
-                self.editor.setHtml(body_html or "")
-                
-                # Применяем шрифт ко всему содержимому при открытии
-                font_size = self.config.get("font_size", 11)
-                self._force_font_size(font_size)
-
-                # Загрузить картинки в ресурсы документа
-                attachments = self.repo.get_attachments(note_id)
-                for att_id, name, img_bytes, mime in attachments:
-                    if img_bytes:
-                        image = QImage.fromData(img_bytes)
-                        self.editor.document().addResource(
-                            QTextDocument.ImageResource,
-                            f"noteimg://{att_id}",
-                            image,
-                        )
-
-                # Восстановление курсора
-                if cursor_pos is not None:
-                    cursor = self.editor.textCursor()
-                    if cursor_pos <= len(self.editor.toPlainText()):
-                        cursor.setPosition(cursor_pos)
-                    else:
-                        cursor.movePosition(QTextCursor.End)
-                    self.editor.setTextCursor(cursor)
-                    self.editor.ensureCursorVisible()
-
+                self.editor.setHtml("")
                 self.editor.blockSignals(False)
-                break
+                return
+
+            nid, parent_id, title, body_html, cursor_pos, updated_at = row
+
+            self.editor.blockSignals(True)
+            self.editor.setHtml(body_html or "")
+
+            # Применяем шрифт ко всему содержимому при открытии
+            font_size = self.config.get("font_size", 11)
+            self._force_font_size(font_size)
+
+            # Загрузить картинки в ресурсы документа
+            attachments = self.repo.get_attachments(note_id)
+            for att_id, name, img_bytes, mime in attachments:
+                if img_bytes:
+                    image = QImage.fromData(img_bytes)
+                    self.editor.document().addResource(
+                        QTextDocument.ImageResource,
+                        f"noteimg://{att_id}",
+                        image,
+                    )
+
+            # Восстановление курсора
+            if cursor_pos is not None:
+                cursor = self.editor.textCursor()
+                if cursor_pos <= len(self.editor.toPlainText()):
+                    cursor.setPosition(cursor_pos)
+                else:
+                    cursor.movePosition(QTextCursor.End)
+                self.editor.setTextCursor(cursor)
+                self.editor.ensureCursorVisible()
+
+            self.editor.blockSignals(False)
+
+        finally:
+            self._is_switching_note = False
 
     def save_current_note(self):
         """Сохранение текущей заметки"""
         if not self.current_note_id:
             return
 
-        html = self.editor.toHtml()
-        cursor_pos = self.editor.textCursor().position()
+        # Сохраняем только если редактор действительно привязан к этой заметке
+        if self.editor.current_note_id != self.current_note_id:
+            return
 
-        current_item = self.tree_notes.currentItem()
-        if current_item:
-            title = current_item.text(0)
-            self.repo.save_note(self.current_note_id, title, html, cursor_pos)
+        item = self.tree_notes.currentItem()
+        title = None
+        if item is not None and item.data(0, Qt.UserRole) == self.current_note_id:
+            title = item.text(0)
+
+        self._save_editor_content(self.current_note_id, title)
+
+    def _on_editor_focus_out(self):
+        """Ключевое событие: редактор теряет фокус."""
+        if self._is_switching_note:
+            return
+        self.save_current_note()
 
     def _restore_last_state(self):
         """Восстановление последней открытой заметки"""
@@ -443,10 +539,10 @@ class MainWindow(QMainWindow):
             try:
                 import ctypes
                 from ctypes import wintypes
-                
+
                 # Получаем HWND окна
                 hwnd = int(self.winId())
-                
+
                 # Константы Windows
                 SW_RESTORE = 9
                 SW_SHOW = 5
@@ -454,22 +550,22 @@ class MainWindow(QMainWindow):
                 SWP_NOMOVE = 0x0002
                 SWP_NOSIZE = 0x0001
                 SWP_SHOWWINDOW = 0x0040
-                
+
                 # Восстанавливаем окно если свернуто
                 ctypes.windll.user32.ShowWindow(hwnd, SW_RESTORE)
-                
+
                 # Устанавливаем окно поверх всех
                 ctypes.windll.user32.SetWindowPos(
                     hwnd, HWND_TOP, 0, 0, 0, 0,
                     SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
                 )
-                
+
                 # Форсируем активацию окна
                 ctypes.windll.user32.SetForegroundWindow(hwnd)
-                
+
                 # Дополнительно: мигаем окном если не удалось активировать
                 ctypes.windll.user32.FlashWindow(hwnd, True)
-                
+
             except Exception as e:
                 print(f"Ошибка при активации окна (Windows): {e}")
 
@@ -477,19 +573,19 @@ class MainWindow(QMainWindow):
         """Показать и активировать окно"""
         # Снимаем флаг минимизации если был установлен
         self.setWindowState(self.windowState() & ~Qt.WindowMinimized | Qt.WindowActive)
-        
+
         # Показываем окно
         self.show()
-        
+
         # Стандартные методы Qt
         self.raise_()
         self.activateWindow()
-        
+
         # Специальная обработка для Windows
         if sys.platform == 'win32':
             # Небольшая задержка для корректной работы
             QTimer.singleShot(50, self._force_window_to_front_windows)
-        
+
         # Фокус на редактор если заметка выбрана
         if self.current_note_id:
             # Задержка для надежной установки фокуса
@@ -497,15 +593,20 @@ class MainWindow(QMainWindow):
 
     def hide_to_tray(self):
         """Скрыть в трей"""
-        if self.current_note_id:
-            self.save_current_note()
+        self.save_current_note()
         self.hide()
 
     def quit_app(self):
         """Выход из приложения"""
-        if self.current_note_id:
-            self.save_current_note()
+        self.save_current_note()
         QApplication.instance().quit()
+
+    def changeEvent(self, event):
+        # Сохранение при сворачивании
+        if event.type() == QEvent.WindowStateChange:
+            if self.isMinimized():
+                self.save_current_note()
+        super().changeEvent(event)
 
     def keyPressEvent(self, event):
         """Обработка нажатий клавиш"""

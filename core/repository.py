@@ -1,13 +1,17 @@
-# core/repository.py
 import sqlite3
 from datetime import datetime
 
 
 class NoteRepository:
     """Репозиторий для работы с базой данных заметок"""
-    
+
     def __init__(self, db_path="notes.db"):
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
+        # Для надежной работы ON DELETE CASCADE в SQLite
+        try:
+            self.conn.execute("PRAGMA foreign_keys = ON")
+        except Exception:
+            pass
         self._init_db()
 
     def _init_db(self):
@@ -23,7 +27,7 @@ class NoteRepository:
                 FOREIGN KEY(parent_id) REFERENCES notes(id) ON DELETE CASCADE
             )
         """)
-        
+
         # Миграция для старых баз: добавление колонки cursor_position
         try:
             cursor.execute("ALTER TABLE notes ADD COLUMN cursor_position INTEGER DEFAULT 0")
@@ -65,6 +69,15 @@ class NoteRepository:
         cursor.execute("SELECT id, parent_id, title, body_html, cursor_position, updated_at FROM notes ORDER BY id")
         return cursor.fetchall()
 
+    def get_note(self, note_id: int):
+        """Получить одну заметку (id, parent_id, title, body_html, cursor_position, updated_at)"""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT id, parent_id, title, body_html, cursor_position, updated_at FROM notes WHERE id=?",
+            (note_id,),
+        )
+        return cursor.fetchone()
+
     def save_note(self, note_id, title, body_html, cursor_pos=0):
         """Сохранить изменения в заметке"""
         cursor = self.conn.cursor()
@@ -81,13 +94,13 @@ class NoteRepository:
         """, (parent_id, title))
         self.conn.commit()
         return cursor.lastrowid
-    
+
     def delete_note(self, note_id):
         """Удалить заметку"""
         cursor = self.conn.cursor()
         cursor.execute("DELETE FROM notes WHERE id=?", (note_id,))
         self.conn.commit()
-    
+
     def get_note_by_title(self, title, parent_id=None):
         """Найти заметку по заголовку и родителю"""
         cursor = self.conn.cursor()
