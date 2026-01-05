@@ -7,7 +7,7 @@ from PySide6.QtCore import Qt, QTimer, Signal, QObject
 from PySide6.QtGui import QAction, QIcon, QPixmap, QImage
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QTreeWidget, QTreeWidgetItem, QTextEdit, 
-    QSplitter, QSystemTrayIcon, QMenu
+    QSplitter, QSystemTrayIcon, QMenu, QStyle
 )
 from pynput import keyboard
 
@@ -62,7 +62,7 @@ class NoteRepository:
         cursor = self.conn.cursor()
         cursor.execute("""
             UPDATE notes SET title=?, body_html=?, updated_at=? WHERE id=?
-        """, (title, body_html, datetime.now(), note_id))
+        """, (title, body_html, datetime.now().isoformat(sep=" "), note_id))
         self.conn.commit()
 
     def create_note(self, parent_id, title):
@@ -210,7 +210,10 @@ class MainWindow(QMainWindow):
 class TrayController:
     def __init__(self, window: MainWindow):
         self.window = window
-        self.tray = QSystemTrayIcon(QIcon())  # TODO: добавить иконку
+        # Используем стандартную иконку, чтобы не было предупреждения "No Icon set"
+        icon = window.style().standardIcon(QStyle.SP_ComputerIcon)
+        self.tray = QSystemTrayIcon(icon)
+        
         menu = QMenu()
         act_toggle = QAction("Show/Hide")
         act_toggle.triggered.connect(self.toggle)
