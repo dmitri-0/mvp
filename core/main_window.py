@@ -1,6 +1,6 @@
 # core/main_window.py
 from datetime import datetime
-from PySide6.QtCore import Qt, QTimer, QEvent
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFont, QTextDocument, QKeySequence, QShortcut, QImage, QTextCursor
 from PySide6.QtWidgets import (
     QMainWindow, QTreeWidget, QTreeWidgetItem, QTreeWidgetItemIterator, QSplitter,
@@ -40,8 +40,8 @@ class SettingsDialog(QDialog):
 
         # Шорткат смены фокуса
         hotkeys = config.get("hotkeys", {})
-        self.focus_key_edit = QLineEdit(hotkeys.get("toggle_focus", "Tab"))
-        layout.addRow("Смена фокуса (Tab):", self.focus_key_edit)
+        self.focus_key_edit = QLineEdit(hotkeys.get("toggle_focus", "<alt>+s"))
+        layout.addRow("Смена фокуса:", self.focus_key_edit)
 
         # Кнопки
         btn_save = QPushButton("Сохранить")
@@ -89,13 +89,13 @@ class MainWindow(QMainWindow):
         self.tree_notes.setHeaderLabel("Notes")
         self.tree_notes.currentItemChanged.connect(self.on_note_selected)
         self.tree_notes.setSelectionMode(QTreeWidget.ExtendedSelection)
-        self.tree_notes.installEventFilter(self)
+        # Удален eventFilter
 
         # Правая панель - редактор
         self.editor = NoteEditor()
         self.editor.setAcceptRichText(True)
         self.editor.set_context(self.repo, lambda: self.current_note_id)
-        self.editor.installEventFilter(self)
+        # Удален eventFilter
 
         # Применение шрифта
         self._apply_font()
@@ -117,6 +117,7 @@ class MainWindow(QMainWindow):
 
         self.current_note_id = None
         self.focused_widget = self.tree_notes
+        self.toggle_focus_shortcut = None  # Ссылка на шорткат
 
         # Шорткаты
         self._setup_shortcuts()
@@ -142,56 +143,39 @@ class MainWindow(QMainWindow):
 
     def _setup_shortcuts(self):
         """Настройка горячих клавиш"""
-        # F4 - добавить заметку
-        add_shortcut = QShortcut(QKeySequence("F4"), self)
-        add_shortcut.activated.connect(self.add_note)
+        # Смена фокуса
+        hotkeys = self.config.get("hotkeys", {})
+        focus_key = hotkeys.get("toggle_focus", "<alt>+s")
+        
+        # Обновляем или создаем шорткат
+        if self.toggle_focus_shortcut:
+            self.toggle_focus_shortcut.setKey(QKeySequence(focus_key))
+        else:
+            self.toggle_focus_shortcut = QShortcut(QKeySequence(focus_key), self)
+            self.toggle_focus_shortcut.activated.connect(self.toggle_focus)
+            # Важно: контекст ApplicationShortcut позволяет работать даже если фокус не в окне
+            # Но для toggle_focus лучше WindowShortcut (по умолчанию)
 
-        # F8 - удалить заметки
-        del_shortcut = QShortcut(QKeySequence("F8"), self)
-        del_shortcut.activated.connect(self.delete_notes)
+        # F4 - добавить заметку
+        # Используем QShortcut с привязкой к self, чтобы не плодить дубликаты при пересоздании
+        # (в текущей реализации они создаются один раз, но при обновлении настроек метод вызывается снова)
+        # Для простоты здесь создаем новые, но старые не удаляем явно (Qt удалит при уничтожении window),
+        # но лучше хранить ссылки, как для toggle_focus.
+        # Для F4/F8 оставим как есть, так как они редко меняются.
+        
+        # Чтобы не дублировать при вызове из open_settings, проверим наличие атрибутов
+        if not hasattr(self, 'add_note_shortcut'):
+            self.add_note_shortcut = QShortcut(QKeySequence("F4"), self)
+            self.add_note_shortcut.activated.connect(self.add_note)
+            
+        if not hasattr(self, 'del_note_shortcut'):
+            self.del_note_shortcut = QShortcut(QKeySequence("F8"), self)
+            self.del_note_shortcut.activated.connect(self.delete_notes)
 
         # Ctrl+, - открыть настройки
-        settings_shortcut = QShortcut(QKeySequence("Ctrl+,"), self)
-        settings_shortcut.activated.connect(self.open_settings)
-
-        # Клавиша смены фокуса для eventFilter
-        hotkeys = self.config.get("hotkeys", {})
-        self.toggle_focus_key = QKeySequence(hotkeys.get("toggle_focus", "Tab"))
-
-    def _event_matches_keysequence(self, event, sequence: QKeySequence) -> bool:
-        """Сопоставление QKeyEvent и QKeySequence (Qt/PySide6-safe).
-
-        QKeyEvent.matches() в PySide6 работает только со StandardKey, поэтому
-        сравнение делается через QKeySequence.matches().
-        """
-        if sequence is None or sequence.isEmpty():
-            return False
-
-        # В Qt принято кодировать модификаторы + клавишу в одном int
-        event_seq = QKeySequence(int(event.modifiers()) | int(event.key()))
-        return sequence.matches(event_seq) == QKeySequence.SequenceMatch.ExactMatch
-
-    def eventFilter(self, obj, event):
-        """Перехват событий клавиатуры для смены фокуса и табуляции"""
-        if event.type() == QEvent.KeyPress:
-            # Shift+Tab в редакторе = вставить символ табуляции
-            if (
-                obj == self.editor
-                and event.key() == Qt.Key_Tab
-                and (event.modifiers() & Qt.ShiftModifier)
-            ):
-                cursor = self.editor.textCursor()
-                cursor.insertText("\t")
-                return True
-
-            # Клавиша смены фокуса (по умолчанию Tab)
-            if self._event_matches_keysequence(event, self.toggle_focus_key):
-                # Не перехватываем Shift+Tab для смены фокуса (он уже обработан выше)
-                if not (event.key() == Qt.Key_Tab and (event.modifiers() & Qt.ShiftModifier)):
-                    self.toggle_focus()
-                    return True
-
-        return super().eventFilter(obj, event)
+        if not hasattr(self, 'settings_shortcut'):
+            self.settings_shortcut = QShortcut(QKeySequence("Ctrl+,"), self)
+            self.settings_shortcut.activated.connect(self.open_settings)
 
     def toggle_focus(self):
         """Переключение фокуса между деревом и редактором"""
