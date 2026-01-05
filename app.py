@@ -1,5 +1,6 @@
 # app.py - точка входа в приложение
 import sys
+import os
 from PySide6.QtWidgets import QApplication
 from core.main_window import MainWindow
 from core.repository import NoteRepository
@@ -26,8 +27,25 @@ def main():
     hotkeys = HotkeyController(window, config)
     hotkeys.start()
     
-    # Корректная остановка хоткеев при выходе
-    app.aboutToQuit.connect(hotkeys.stop)
+    # Корректная остановка хоткеев при выходе и очистка буфера ввода
+    def on_quit():
+        hotkeys.stop()
+        # Очистка буфера ввода (Linux/Windows)
+        try:
+            if sys.platform == 'win32':
+                import msvcrt
+                while msvcrt.kbhit():
+                    msvcrt.getch()
+            else:
+                import termios
+                import tty
+                termios.tcflush(sys.stdin, termios.TCIOFLUSH)
+        except ImportError:
+            pass
+        except Exception as e:
+            print(f"Error flushing input buffer: {e}")
+
+    app.aboutToQuit.connect(on_quit)
     
     window.show_and_focus()
     sys.exit(app.exec())
