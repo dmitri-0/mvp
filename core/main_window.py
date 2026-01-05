@@ -533,46 +533,64 @@ class MainWindow(QMainWindow):
             if iter.value():
                 self.tree_notes.setCurrentItem(iter.value())
 
-    def _force_window_to_front_windows(self):
-        """Принудительный вывод окна на передний план (Windows)"""
-        if sys.platform == 'win32':
-            try:
-                import ctypes
-                from ctypes import wintypes
+    def _force_window_activation_windows(self):
+        """Принудительная активация окна на Windows (более агрессивная)"""
+        if sys.platform != 'win32':
+            return
 
-                # Получаем HWND окна
-                hwnd = int(self.winId())
+        try:
+            import ctypes
+            from ctypes import wintypes
 
-                # Константы Windows
-                SW_RESTORE = 9
-                SW_SHOW = 5
-                HWND_TOP = 0
-                SWP_NOMOVE = 0x0002
-                SWP_NOSIZE = 0x0001
-                SWP_SHOWWINDOW = 0x0040
+            # Получаем HWND окна
+            hwnd = int(self.winId())
 
-                # Восстанавливаем окно если свернуто
-                ctypes.windll.user32.ShowWindow(hwnd, SW_RESTORE)
+            # Константы Windows API
+            SW_RESTORE = 9
+            HWND_TOPMOST = -1
+            HWND_NOTOPMOST = -2
+            SWP_NOMOVE = 0x0002
+            SWP_NOSIZE = 0x0001
+            SWP_SHOWWINDOW = 0x0040
+            SWP_NOACTIVATE = 0x0010
 
-                # Устанавливаем окно поверх всех
-                ctypes.windll.user32.SetWindowPos(
-                    hwnd, HWND_TOP, 0, 0, 0, 0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
-                )
+            user32 = ctypes.windll.user32
 
-                # Форсируем активацию окна
-                ctypes.windll.user32.SetForegroundWindow(hwnd)
+            # 1. Восстанавливаем окно если свернуто
+            user32.ShowWindow(hwnd, SW_RESTORE)
 
-                # Дополнительно: мигаем окном если не удалось активировать
-                ctypes.windll.user32.FlashWindow(hwnd, True)
+            # 2. Временно делаем окно "always on top" для гарантированной активации
+            user32.SetWindowPos(
+                hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+            )
 
-            except Exception as e:
-                print(f"Ошибка при активации окна (Windows): {e}")
+            # 3. Снимаем "always on top" статус
+            user32.SetWindowPos(
+                hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+            )
+
+            # 4. Форсируем активацию окна
+            user32.SetForegroundWindow(hwnd)
+            user32.SetActiveWindow(hwnd)
+            user32.SetFocus(hwnd)
+
+            # 5. Убираем мигание в таскбаре
+            FLASHW_STOP = 0
+            user32.FlashWindow(hwnd, FLASHW_STOP)
+
+        except Exception as e:
+            print(f"Ошибка при активации окна (Windows): {e}")
 
     def show_and_focus(self):
         """Показать и активировать окно"""
         # Снимаем флаг минимизации если был установлен
         self.setWindowState(self.windowState() & ~Qt.WindowMinimized | Qt.WindowActive)
+
+        # Специальная обработка для Windows - ДО показа окна
+        if sys.platform == 'win32':
+            self._force_window_activation_windows()
 
         # Показываем окно
         self.show()
@@ -581,15 +599,9 @@ class MainWindow(QMainWindow):
         self.raise_()
         self.activateWindow()
 
-        # Специальная обработка для Windows
-        if sys.platform == 'win32':
-            # Небольшая задержка для корректной работы
-            QTimer.singleShot(50, self._force_window_to_front_windows)
-
-        # Фокус на редактор если заметка выбрана
+        # Фокус на редактор если заметка выбрана - без задержки
         if self.current_note_id:
-            # Задержка для надежной установки фокуса
-            QTimer.singleShot(100, lambda: self.editor.setFocus())
+            self.editor.setFocus()
 
     def hide_to_tray(self):
         """Скрыть в трей"""
