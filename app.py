@@ -18,12 +18,6 @@ def main():
     # Инициализация репозитория
     repo = NoteRepository(config.get("database_path", "notes.db"))
     
-    # Создание тестовых данных если БД пустая
-    if not repo.get_all_notes():
-        root_id = repo.create_note(None, "Текущие")
-        date_id = repo.create_note(root_id, "25.01.05")
-        repo.create_note(date_id, "20:13:00")
-    
     # Создание главного окна
     window = MainWindow(repo, config)
     
