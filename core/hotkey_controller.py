@@ -1,4 +1,3 @@
-# core/hotkey_controller.py
 import threading
 from PySide6.QtCore import QObject, Signal
 from pynput import keyboard
@@ -29,12 +28,31 @@ class HotkeyController:
 
     def _run(self):
         """Главный цикл прослушивания горячих клавиш"""
-        hotkeys_config = self.config.get("hotkeys", {})
-        show_key = hotkeys_config.get("show_window", "<alt>+s")
-        quit_key = hotkeys_config.get("quit", "<shift>+<esc>")
+        hotkeys = self.config.get("hotkeys", {})
         
-        with keyboard.GlobalHotKeys({
-            show_key: self.signals.show_signal.emit,
-            quit_key: self.signals.quit_signal.emit,
-        }) as h:
-            h.join()
+        # Поддержка новой вложенной структуры с fallback на старую (хотя миграция должна сработать)
+        if "global" in hotkeys:
+            global_keys = hotkeys["global"]
+        else:
+            global_keys = hotkeys
+
+        show_key = global_keys.get("show_window", "<alt>+s")
+        quit_key = global_keys.get("quit", "<shift>+<esc>")
+        
+        try:
+            with keyboard.GlobalHotKeys({
+                show_key: self.signals.show_signal.emit,
+                quit_key: self.signals.quit_signal.emit,
+            }) as h:
+                h.join()
+        except ValueError as e:
+            print(f"Error initializing hotkeys: {e}. Falling back to defaults.")
+            # Fallback на безопасные дефолты чтобы не валить приложение
+            try:
+                with keyboard.GlobalHotKeys({
+                    "<alt>+s": self.signals.show_signal.emit,
+                    "<shift>+<esc>": self.signals.quit_signal.emit,
+                }) as h:
+                    h.join()
+            except Exception as e2:
+                print(f"Critical error in hotkeys: {e2}")
