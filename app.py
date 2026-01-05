@@ -4,7 +4,7 @@ import threading
 import sqlite3
 from datetime import datetime
 from PySide6.QtCore import Qt, QTimer, Signal, QObject, QBuffer, QByteArray, QIODevice
-from PySide6.QtGui import QAction, QIcon, QPixmap, QImage
+from PySide6.QtGui import QAction, QIcon, QPixmap, QImage, QTextDocument
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QTreeWidget, QTreeWidgetItem, QTextEdit, 
     QSplitter, QSystemTrayIcon, QMenu, QStyle
@@ -123,7 +123,7 @@ class NoteEditor(QTextEdit):
                     
                     # Register resource and insert HTML
                     url = f"noteimg://{att_id}"
-                    self.document().addResource(QTextEdit.ImageResource, url, image)
+                    self.document().addResource(QTextDocument.ImageResource, url, image)
                     self.textCursor().insertHtml(f'<img src="{url}" />')
                     return
         
@@ -216,7 +216,7 @@ class MainWindow(QMainWindow):
                     if img_bytes:
                         image = QImage.fromData(img_bytes)
                         self.editor.document().addResource(
-                            QTextEdit.ImageResource, 
+                            QTextDocument.ImageResource, 
                             f"noteimg://{att_id}", 
                             image
                         )
