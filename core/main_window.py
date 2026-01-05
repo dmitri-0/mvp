@@ -1,7 +1,7 @@
 # core/main_window.py
 from datetime import datetime
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QFont, QTextDocument, QKeySequence, QShortcut, QImage
+from PySide6.QtGui import QFont, QTextDocument, QKeySequence, QShortcut, QImage, QTextCursor
 from PySide6.QtWidgets import (
     QMainWindow, QTreeWidget, QTreeWidgetItem, QTreeWidgetItemIterator, QSplitter,
     QApplication, QDialog, QVBoxLayout, QLabel, QSpinBox,
@@ -60,7 +60,7 @@ class SettingsDialog(QDialog):
         QMessageBox.information(
             self,
             "Настройки",
-            "Настройки сохранены. Перезапустите приложение для применения изменений.",
+            "Настройки сохранены. Изменения применены.",
         )
         self.accept()
 
@@ -86,12 +86,8 @@ class MainWindow(QMainWindow):
         self.editor.setAcceptRichText(True)
         self.editor.set_context(self.repo, lambda: self.current_note_id)
 
-        # Применение моноширинного шрифта
-        font_family = config.get("font_family", "Consolas")
-        font_size = config.get("font_size", 11)
-        font = QFont(font_family, font_size)
-        font.setStyleHint(QFont.Monospace)
-        self.editor.setFont(font)
+        # Применение шрифта
+        self._apply_font()
 
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(self.tree_notes)
@@ -105,14 +101,31 @@ class MainWindow(QMainWindow):
         self._save_timer.setSingleShot(True)
         self._save_timer.timeout.connect(self.save_current_note)
         self.editor.textChanged.connect(lambda: self._save_timer.start(500))
+        # Отслеживание позиции курсора
+        self.editor.cursorPositionChanged.connect(lambda: self._save_timer.start(1000))
 
         self.current_note_id = None
-        self.focused_widget = self.tree_notes  # Отслеживание фокуса
+        self.focused_widget = self.tree_notes
 
         # Шорткаты
         self._setup_shortcuts()
 
+        # Загрузка и восстановление состояния
         self.load_notes_tree()
+        self._restore_last_state()
+
+    def _apply_font(self):
+        """Применение настроек шрифта к редактору"""
+        font_family = self.config.get("font_family", "Consolas")
+        font_size = self.config.get("font_size", 11)
+        font = QFont(font_family, font_size)
+        font.setStyleHint(QFont.Monospace)
+        self.editor.setFont(font)
+        
+        # Обновление стиля документа для мгновенного применения
+        doc = self.editor.document()
+        doc.setDefaultFont(font)
+        self.editor.setStyleSheet(f"QTextEdit {{ font-family: '{font_family}'; font-size: {font_size}pt; }}")
 
     def _setup_shortcuts(self):
         """Настройка горячих клавиш"""
@@ -143,14 +156,12 @@ class MainWindow(QMainWindow):
 
     def add_note(self):
         """Добавление новой заметки с автоматическим именованием"""
-        # Получаем корневую заметку "Текущие"
         current_root = self.repo.get_note_by_title("Текущие")
         if not current_root:
             current_root_id = self.repo.create_note(None, "Текущие")
         else:
             current_root_id = current_root[0]
 
-        # Получаем или создаем заметку с текущей датой
         date_str = datetime.now().strftime("%y.%m.%d")
         date_note = self.repo.get_note_by_title(date_str, current_root_id)
         if not date_note:
@@ -158,13 +169,14 @@ class MainWindow(QMainWindow):
         else:
             date_note_id = date_note[0]
 
-        # Создаем заметку с текущим временем
         time_str = datetime.now().strftime("%H:%M:%S")
         new_note_id = self.repo.create_note(date_note_id, time_str)
 
-        # Обновляем дерево
         self.load_notes_tree()
         self._select_note_by_id(new_note_id)
+        
+        # Немедленно ставим фокус в редактор
+        self.editor.setFocus()
 
     def delete_notes(self):
         """Удаление выбранных заметок"""
@@ -172,7 +184,6 @@ class MainWindow(QMainWindow):
         if not selected_items:
             return
 
-        # Подтверждение удаления
         reply = QMessageBox.question(
             self,
             "Удаление заметок",
@@ -192,14 +203,19 @@ class MainWindow(QMainWindow):
     def open_settings(self):
         """Открытие окна настроек"""
         dialog = SettingsDialog(self.config, self)
-        dialog.exec()
-
-        # Применение новых настроек шрифта
-        font_family = self.config.get("font_family", "Consolas")
-        font_size = self.config.get("font_size", 11)
-        font = QFont(font_family, font_size)
-        font.setStyleHint(QFont.Monospace)
-        self.editor.setFont(font)
+        if dialog.exec():
+            # Применение новых настроек
+            self._apply_font()
+            # Обновить текущую заметку чтобы применился шрифт (если есть)
+            if self.current_note_id:
+                # Сохраняем курсор перед перезагрузкой
+                cursor = self.editor.textCursor()
+                pos = cursor.position()
+                # Перезагружаем контент (шрифт применится из stylesheet/defaultFont)
+                self.editor.setHtml(self.editor.toHtml())
+                # Восстанавливаем курсор
+                cursor.setPosition(pos)
+                self.editor.setTextCursor(cursor)
 
     def _select_note_by_id(self, note_id):
         """Выбрать заметку по ID в дереве"""
@@ -213,14 +229,22 @@ class MainWindow(QMainWindow):
 
     def load_notes_tree(self):
         """Загрузка дерева заметок из БД"""
+        # Сохраняем состояние раскрытия
+        expanded_ids = set()
+        iterator = QTreeWidgetItemIterator(self.tree_notes)
+        while iterator.value():
+            item = iterator.value()
+            if item.isExpanded():
+                expanded_ids.add(item.data(0, Qt.UserRole))
+            iterator += 1
+            
         self.tree_notes.clear()
         notes = self.repo.get_all_notes()
 
-        # Построение дерева
         items_map = {}
         root_items = []
 
-        for note_id, parent_id, title, body_html, updated_at in notes:
+        for note_id, parent_id, title, body_html, cursor_pos, updated_at in notes:
             item = QTreeWidgetItem([title])
             item.setData(0, Qt.UserRole, note_id)
             items_map[note_id] = item
@@ -234,11 +258,17 @@ class MainWindow(QMainWindow):
                     root_items.append(item)
 
         self.tree_notes.addTopLevelItems(root_items)
-        self.tree_notes.expandAll()
-
-        # Выбрать первую заметку
-        if root_items:
-            self.tree_notes.setCurrentItem(root_items[0])
+        
+        # Восстанавливаем состояние раскрытия или раскрываем всё если пусто
+        if not expanded_ids:
+            self.tree_notes.expandAll()
+        else:
+            iterator = QTreeWidgetItemIterator(self.tree_notes)
+            while iterator.value():
+                item = iterator.value()
+                if item.data(0, Qt.UserRole) in expanded_ids:
+                    item.setExpanded(True)
+                iterator += 1
 
     def on_note_selected(self, current_item, previous_item):
         """Переключение на другую заметку"""
@@ -250,14 +280,17 @@ class MainWindow(QMainWindow):
 
         note_id = current_item.data(0, Qt.UserRole)
         self.current_note_id = note_id
+        
+        # Сохраняем ID открытой заметки
+        self.repo.set_state("last_opened_note_id", note_id)
 
         # Загрузить содержимое заметки
         notes = self.repo.get_all_notes()
-        for nid, _, title, body_html, _ in notes:
+        for nid, _, title, body_html, cursor_pos, _ in notes:
             if nid == note_id:
                 self.editor.blockSignals(True)
                 self.editor.setHtml(body_html or "")
-
+                
                 # Загрузить картинки в ресурсы документа
                 attachments = self.repo.get_attachments(note_id)
                 for att_id, name, img_bytes, mime in attachments:
@@ -268,6 +301,16 @@ class MainWindow(QMainWindow):
                             f"noteimg://{att_id}",
                             image,
                         )
+                
+                # Восстановление курсора
+                if cursor_pos is not None:
+                    cursor = self.editor.textCursor()
+                    if cursor_pos <= len(self.editor.toPlainText()): 
+                        cursor.setPosition(cursor_pos)
+                    else:
+                        cursor.movePosition(QTextCursor.End)
+                    self.editor.setTextCursor(cursor)
+                    self.editor.ensureCursorVisible()
 
                 self.editor.blockSignals(False)
                 break
@@ -278,19 +321,45 @@ class MainWindow(QMainWindow):
             return
 
         html = self.editor.toHtml()
+        cursor_pos = self.editor.textCursor().position()
+        
         current_item = self.tree_notes.currentItem()
         if current_item:
             title = current_item.text(0)
-            self.repo.save_note(self.current_note_id, title, html)
+            self.repo.save_note(self.current_note_id, title, html, cursor_pos)
+
+    def _restore_last_state(self):
+        """Восстановление последней открытой заметки"""
+        last_id_str = self.repo.get_state("last_opened_note_id")
+        if last_id_str:
+            try:
+                last_id = int(last_id_str)
+                self._select_note_by_id(last_id)
+                if self.tree_notes.currentItem():
+                    self.tree_notes.setFocus()
+            except ValueError:
+                pass
+        
+        # Если ничего не выбрали, выбираем первую
+        if not self.tree_notes.currentItem():
+            iter = QTreeWidgetItemIterator(self.tree_notes)
+            if iter.value():
+                self.tree_notes.setCurrentItem(iter.value())
 
     def show_and_focus(self):
         """Показать и активировать окно"""
         self.show()
         self.raise_()
         self.activateWindow()
+        
+        # Фокус на редактор если заметка выбрана
+        if self.current_note_id:
+            self.editor.setFocus()
 
     def hide_to_tray(self):
         """Скрыть в трей"""
+        if self.current_note_id:
+            self.save_current_note()
         self.hide()
 
     def quit_app(self):
