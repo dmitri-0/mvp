@@ -37,7 +37,7 @@ class SettingsDialog(QDialog):
         self.font_size_spin.setRange(8, 24)
         self.font_size_spin.setValue(config.get("font_size", 11))
         layout.addRow("Размер шрифта:", self.font_size_spin)
-        
+
         # Шорткат смены фокуса
         hotkeys = config.get("hotkeys", {})
         self.focus_key_edit = QLineEdit(hotkeys.get("toggle_focus", "Tab"))
@@ -61,7 +61,7 @@ class SettingsDialog(QDialog):
         self.config.set("database_path", self.db_path_edit.text())
         self.config.set("font_family", self.font_family_edit.text())
         self.config.set("font_size", self.font_size_spin.value())
-        
+
         hotkeys = self.config.get("hotkeys", {})
         hotkeys["toggle_focus"] = self.focus_key_edit.text()
         self.config.set("hotkeys", hotkeys)
@@ -132,11 +132,13 @@ class MainWindow(QMainWindow):
         font = QFont(font_family, font_size)
         font.setStyleHint(QFont.Monospace)
         self.editor.setFont(font)
-        
+
         # Обновление стиля документа для мгновенного применения
         doc = self.editor.document()
         doc.setDefaultFont(font)
-        self.editor.setStyleSheet(f"QTextEdit {{ font-family: '{font_family}'; font-size: {font_size}pt; }}")
+        self.editor.setStyleSheet(
+            f"QTextEdit {{ font-family: '{font_family}'; font-size: {font_size}pt; }}"
+        )
 
     def _setup_shortcuts(self):
         """Настройка горячих клавиш"""
@@ -151,25 +153,44 @@ class MainWindow(QMainWindow):
         # Ctrl+, - открыть настройки
         settings_shortcut = QShortcut(QKeySequence("Ctrl+,"), self)
         settings_shortcut.activated.connect(self.open_settings)
-        
-        # Обновление клавиши смены фокуса для eventFilter
+
+        # Клавиша смены фокуса для eventFilter
         hotkeys = self.config.get("hotkeys", {})
         self.toggle_focus_key = QKeySequence(hotkeys.get("toggle_focus", "Tab"))
+
+    def _event_matches_keysequence(self, event, sequence: QKeySequence) -> bool:
+        """Сопоставление QKeyEvent и QKeySequence (Qt/PySide6-safe).
+
+        QKeyEvent.matches() в PySide6 работает только со StandardKey, поэтому
+        сравнение делается через QKeySequence.matches().
+        """
+        if sequence is None or sequence.isEmpty():
+            return False
+
+        # В Qt принято кодировать модификаторы + клавишу в одном int
+        event_seq = QKeySequence(int(event.modifiers()) | int(event.key()))
+        return sequence.matches(event_seq) == QKeySequence.SequenceMatch.ExactMatch
 
     def eventFilter(self, obj, event):
         """Перехват событий клавиатуры для смены фокуса и табуляции"""
         if event.type() == QEvent.KeyPress:
-            # Проверка на Shift+Tab в редакторе (вставка табуляции)
-            if obj == self.editor and event.key() == Qt.Key_Tab and (event.modifiers() & Qt.ShiftModifier):
+            # Shift+Tab в редакторе = вставить символ табуляции
+            if (
+                obj == self.editor
+                and event.key() == Qt.Key_Tab
+                and (event.modifiers() & Qt.ShiftModifier)
+            ):
                 cursor = self.editor.textCursor()
                 cursor.insertText("\t")
                 return True
-            
-            # Проверка клавиши смены фокуса
-            if event.matches(self.toggle_focus_key):
-                self.toggle_focus()
-                return True
-                
+
+            # Клавиша смены фокуса (по умолчанию Tab)
+            if self._event_matches_keysequence(event, self.toggle_focus_key):
+                # Не перехватываем Shift+Tab для смены фокуса (он уже обработан выше)
+                if not (event.key() == Qt.Key_Tab and (event.modifiers() & Qt.ShiftModifier)):
+                    self.toggle_focus()
+                    return True
+
         return super().eventFilter(obj, event)
 
     def toggle_focus(self):
@@ -201,7 +222,7 @@ class MainWindow(QMainWindow):
 
         self.load_notes_tree()
         self._select_note_by_id(new_note_id)
-        
+
         # Немедленно ставим фокус в редактор
         self.editor.setFocus()
 
@@ -237,12 +258,9 @@ class MainWindow(QMainWindow):
             self._apply_font()
             # Обновить текущую заметку чтобы применился шрифт (если есть)
             if self.current_note_id:
-                # Сохраняем курсор перед перезагрузкой
                 cursor = self.editor.textCursor()
                 pos = cursor.position()
-                # Перезагружаем контент (шрифт применится из stylesheet/defaultFont)
                 self.editor.setHtml(self.editor.toHtml())
-                # Восстанавливаем курсор
                 cursor.setPosition(pos)
                 self.editor.setTextCursor(cursor)
 
@@ -266,7 +284,7 @@ class MainWindow(QMainWindow):
             if item.isExpanded():
                 expanded_ids.add(item.data(0, Qt.UserRole))
             iterator += 1
-            
+
         self.tree_notes.clear()
         notes = self.repo.get_all_notes()
 
@@ -287,7 +305,7 @@ class MainWindow(QMainWindow):
                     root_items.append(item)
 
         self.tree_notes.addTopLevelItems(root_items)
-        
+
         # Восстанавливаем состояние раскрытия или раскрываем всё если пусто
         if not expanded_ids:
             self.tree_notes.expandAll()
@@ -309,7 +327,7 @@ class MainWindow(QMainWindow):
 
         note_id = current_item.data(0, Qt.UserRole)
         self.current_note_id = note_id
-        
+
         # Сохраняем ID открытой заметки
         self.repo.set_state("last_opened_note_id", note_id)
 
@@ -319,7 +337,7 @@ class MainWindow(QMainWindow):
             if nid == note_id:
                 self.editor.blockSignals(True)
                 self.editor.setHtml(body_html or "")
-                
+
                 # Загрузить картинки в ресурсы документа
                 attachments = self.repo.get_attachments(note_id)
                 for att_id, name, img_bytes, mime in attachments:
@@ -330,11 +348,11 @@ class MainWindow(QMainWindow):
                             f"noteimg://{att_id}",
                             image,
                         )
-                
+
                 # Восстановление курсора
                 if cursor_pos is not None:
                     cursor = self.editor.textCursor()
-                    if cursor_pos <= len(self.editor.toPlainText()): 
+                    if cursor_pos <= len(self.editor.toPlainText()):
                         cursor.setPosition(cursor_pos)
                     else:
                         cursor.movePosition(QTextCursor.End)
@@ -351,7 +369,7 @@ class MainWindow(QMainWindow):
 
         html = self.editor.toHtml()
         cursor_pos = self.editor.textCursor().position()
-        
+
         current_item = self.tree_notes.currentItem()
         if current_item:
             title = current_item.text(0)
@@ -368,7 +386,7 @@ class MainWindow(QMainWindow):
                     self.tree_notes.setFocus()
             except ValueError:
                 pass
-        
+
         # Если ничего не выбрали, выбираем первую
         if not self.tree_notes.currentItem():
             iter = QTreeWidgetItemIterator(self.tree_notes)
@@ -380,7 +398,7 @@ class MainWindow(QMainWindow):
         self.show()
         self.raise_()
         self.activateWindow()
-        
+
         # Фокус на редактор если заметка выбрана
         if self.current_note_id:
             self.editor.setFocus()
