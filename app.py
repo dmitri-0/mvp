@@ -3,7 +3,7 @@ import sys
 import threading
 import sqlite3
 from datetime import datetime
-from PySide6.QtCore import Qt, QTimer, Signal, QObject
+from PySide6.QtCore import Qt, QTimer, Signal, QObject, QBuffer, QByteArray, QIODevice
 from PySide6.QtGui import QAction, QIcon, QPixmap, QImage
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QTreeWidget, QTreeWidgetItem, QTextEdit, 
@@ -88,6 +88,48 @@ class NoteRepository:
         return cursor.lastrowid
 
 
+# === Custom Editor ===
+class NoteEditor(QTextEdit):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.repo = None
+        self.get_current_note_id = None
+
+    def set_context(self, repo, get_note_id_func):
+        self.repo = repo
+        self.get_current_note_id = get_note_id_func
+
+    def canInsertFromMimeData(self, source):
+        if source.hasImage():
+            return True
+        return super().canInsertFromMimeData(source)
+
+    def insertFromMimeData(self, source):
+        if source.hasImage() and self.repo and self.get_current_note_id:
+            note_id = self.get_current_note_id()
+            if note_id:
+                image = source.imageData()
+                if isinstance(image, QImage):
+                    # Convert QImage to PNG bytes
+                    ba = QByteArray()
+                    buff = QBuffer(ba)
+                    buff.open(QIODevice.WriteOnly)
+                    image.save(buff, "PNG")
+                    img_bytes = ba.data()
+                    
+                    # Generate name and save
+                    name = f"pasted_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+                    att_id = self.repo.add_attachment(note_id, name, img_bytes, "image/png")
+                    
+                    # Register resource and insert HTML
+                    url = f"noteimg://{att_id}"
+                    self.document().addResource(QTextEdit.ImageResource, url, image)
+                    self.textCursor().insertHtml(f'<img src="{url}" />')
+                    return
+        
+        super().insertFromMimeData(source)
+
+
 # === Main Window ===
 class MainWindow(QMainWindow):
     def __init__(self, repo: NoteRepository):
@@ -102,8 +144,9 @@ class MainWindow(QMainWindow):
         self.tree_notes.currentItemChanged.connect(self.on_note_selected)
         
         # Правая панель - редактор (всегда редактирование)
-        self.editor = QTextEdit()
+        self.editor = NoteEditor()
         self.editor.setAcceptRichText(True)
+        self.editor.set_context(self.repo, lambda: self.current_note_id)
 
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(self.tree_notes)
@@ -205,6 +248,13 @@ class MainWindow(QMainWindow):
             self.save_current_note()
         QApplication.instance().quit()
 
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Escape:
+            self.hide_to_tray()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
+
 
 # === Tray Controller ===
 class TrayController:
@@ -252,9 +302,9 @@ class HotkeyController:
         self._thread.start()
 
     def _run(self):
+        # Удален глобальный Esc, теперь он обрабатывается в окне
         with keyboard.GlobalHotKeys({
             '<alt>+s': self.signals.show_signal.emit,
-            '<esc>': self.signals.hide_signal.emit,
             '<shift>+<esc>': self.signals.quit_signal.emit,
         }) as h:
             h.join()
