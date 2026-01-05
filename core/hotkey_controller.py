@@ -1,4 +1,3 @@
-import threading
 from PySide6.QtCore import QObject, Signal
 from pynput import keyboard
 
@@ -20,17 +19,13 @@ class HotkeyController:
         self.signals.show_signal.connect(window.show_and_focus)
         self.signals.hide_signal.connect(window.hide_to_tray)
         self.signals.quit_signal.connect(window.quit_app)
-        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._listener = None
 
     def start(self):
         """Запуск прослушивания горячих клавиш"""
-        self._thread.start()
-
-    def _run(self):
-        """Главный цикл прослушивания горячих клавиш"""
         hotkeys = self.config.get("hotkeys", {})
         
-        # Поддержка новой вложенной структуры с fallback на старую (хотя миграция должна сработать)
+        # Поддержка новой вложенной структуры с fallback на старую
         if "global" in hotkeys:
             global_keys = hotkeys["global"]
         else:
@@ -39,20 +34,27 @@ class HotkeyController:
         show_key = global_keys.get("show_window", "<alt>+s")
         quit_key = global_keys.get("quit", "<shift>+<esc>")
         
+        hotkey_map = {
+            show_key: self.signals.show_signal.emit,
+            quit_key: self.signals.quit_signal.emit,
+        }
+
         try:
-            with keyboard.GlobalHotKeys({
-                show_key: self.signals.show_signal.emit,
-                quit_key: self.signals.quit_signal.emit,
-            }) as h:
-                h.join()
+            self._listener = keyboard.GlobalHotKeys(hotkey_map)
+            self._listener.start()
         except ValueError as e:
             print(f"Error initializing hotkeys: {e}. Falling back to defaults.")
-            # Fallback на безопасные дефолты чтобы не валить приложение
             try:
-                with keyboard.GlobalHotKeys({
+                self._listener = keyboard.GlobalHotKeys({
                     "<alt>+s": self.signals.show_signal.emit,
                     "<shift>+<esc>": self.signals.quit_signal.emit,
-                }) as h:
-                    h.join()
+                })
+                self._listener.start()
             except Exception as e2:
                 print(f"Critical error in hotkeys: {e2}")
+
+    def stop(self):
+        """Остановка прослушивания"""
+        if self._listener:
+            self._listener.stop()
+            self._listener = None
