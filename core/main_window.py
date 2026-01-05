@@ -1,6 +1,6 @@
 from datetime import datetime
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QFont, QTextDocument, QKeySequence, QShortcut, QImage, QTextCursor
+from PySide6.QtGui import QFont, QTextDocument, QKeySequence, QShortcut, QImage, QTextCursor, QTextCharFormat
 from PySide6.QtWidgets import (
     QMainWindow, QTreeWidget, QTreeWidgetItem, QTreeWidgetItemIterator, QSplitter,
     QApplication, QDialog, QVBoxLayout, QLabel, QSpinBox,
@@ -145,6 +145,32 @@ class MainWindow(QMainWindow):
         self.editor.setStyleSheet(
             f"QTextEdit {{ font-family: '{font_family}'; font-size: {font_size}pt; }}"
         )
+        
+        # Принудительное обновление размера шрифта во всем документе (без сброса других стилей)
+        self._force_font_size(font_size)
+
+    def _force_font_size(self, size):
+        """Принудительно установить размер шрифта для всего содержимого"""
+        cursor = self.editor.textCursor()
+        if not cursor:
+            return
+            
+        # Сохраняем позицию
+        pos = cursor.position()
+        anchor = cursor.anchor()
+        
+        # Выделяем все
+        cursor.select(QTextCursor.Document)
+        
+        # Применяем только размер шрифта
+        fmt = QTextCharFormat()
+        fmt.setFontPointSize(size)
+        cursor.mergeCharFormat(fmt)
+        
+        # Восстанавливаем позицию
+        cursor.setPosition(anchor)
+        cursor.setPosition(pos, QTextCursor.KeepAnchor)
+        self.editor.setTextCursor(cursor)
 
     def _setup_shortcuts(self):
         """Настройка горячих клавиш"""
@@ -261,6 +287,10 @@ class MainWindow(QMainWindow):
                 self.editor.blockSignals(True)
                 self.editor.setHtml(body_html or "")
                 
+                # Принудительно применяем шрифт при перезагрузке
+                font_size = self.config.get("font_size", 11)
+                self._force_font_size(font_size)
+
                 # Восстановление курсора
                 cursor = self.editor.textCursor()
                 if cursor_pos <= len(self.editor.toPlainText()):
@@ -346,6 +376,10 @@ class MainWindow(QMainWindow):
             if nid == note_id:
                 self.editor.blockSignals(True)
                 self.editor.setHtml(body_html or "")
+                
+                # Применяем шрифт ко всему содержимому при открытии
+                font_size = self.config.get("font_size", 11)
+                self._force_font_size(font_size)
 
                 # Загрузить картинки в ресурсы документа
                 attachments = self.repo.get_attachments(note_id)
