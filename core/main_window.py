@@ -1,4 +1,3 @@
-# core/main_window.py
 from datetime import datetime
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFont, QTextDocument, QKeySequence, QShortcut, QImage, QTextCursor
@@ -40,7 +39,13 @@ class SettingsDialog(QDialog):
 
         # Шорткат смены фокуса
         hotkeys = config.get("hotkeys", {})
-        self.focus_key_edit = QLineEdit(hotkeys.get("toggle_focus", "<alt>+s"))
+        # Поддержка вложенной структуры
+        if "local" in hotkeys:
+            current_focus_key = hotkeys["local"].get("toggle_focus", "F3")
+        else:
+            current_focus_key = hotkeys.get("toggle_focus", "F3")
+            
+        self.focus_key_edit = QLineEdit(current_focus_key)
         layout.addRow("Смена фокуса:", self.focus_key_edit)
 
         # Кнопки
@@ -63,7 +68,9 @@ class SettingsDialog(QDialog):
         self.config.set("font_size", self.font_size_spin.value())
 
         hotkeys = self.config.get("hotkeys", {})
-        hotkeys["toggle_focus"] = self.focus_key_edit.text()
+        if "local" not in hotkeys:
+            hotkeys["local"] = {}
+        hotkeys["local"]["toggle_focus"] = self.focus_key_edit.text()
         self.config.set("hotkeys", hotkeys)
 
         QMessageBox.information(
@@ -145,7 +152,15 @@ class MainWindow(QMainWindow):
         """Настройка горячих клавиш"""
         # Смена фокуса
         hotkeys = self.config.get("hotkeys", {})
-        focus_key = hotkeys.get("toggle_focus", "<alt>+s")
+        
+        # Безопасное получение локальных настроек
+        if "local" in hotkeys:
+            local_keys = hotkeys["local"]
+        else:
+            # Fallback для старых конфигов или если миграция не прошла
+            local_keys = hotkeys
+            
+        focus_key = local_keys.get("toggle_focus", "F3")
         
         # Обновляем или создаем шорткат
         if self.toggle_focus_shortcut:
@@ -153,17 +168,9 @@ class MainWindow(QMainWindow):
         else:
             self.toggle_focus_shortcut = QShortcut(QKeySequence(focus_key), self)
             self.toggle_focus_shortcut.activated.connect(self.toggle_focus)
-            # Важно: контекст ApplicationShortcut позволяет работать даже если фокус не в окне
-            # Но для toggle_focus лучше WindowShortcut (по умолчанию)
 
         # F4 - добавить заметку
-        # Используем QShortcut с привязкой к self, чтобы не плодить дубликаты при пересоздании
-        # (в текущей реализации они создаются один раз, но при обновлении настроек метод вызывается снова)
-        # Для простоты здесь создаем новые, но старые не удаляем явно (Qt удалит при уничтожении window),
-        # но лучше хранить ссылки, как для toggle_focus.
-        # Для F4/F8 оставим как есть, так как они редко меняются.
-        
-        # Чтобы не дублировать при вызове из open_settings, проверим наличие атрибутов
+        # Используем QShortcut с привязкой к self
         if not hasattr(self, 'add_note_shortcut'):
             self.add_note_shortcut = QShortcut(QKeySequence("F4"), self)
             self.add_note_shortcut.activated.connect(self.add_note)
