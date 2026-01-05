@@ -554,8 +554,8 @@ class MainWindow(QMainWindow):
             self.editor.setTextCursor(cursor)
             
             # Принудительно обновляем представление и скролл
+            self.editor.viewport().update()
             self.editor.ensureCursorVisible()
-            self.editor.update()
 
     def showEvent(self, event):
         """Обработка события показа окна"""
@@ -564,9 +564,8 @@ class MainWindow(QMainWindow):
         # При первом показе восстанавливаем позицию курсора с задержкой
         if self._first_show:
             self._first_show = False
-            # Используем QTimer для отложенного восстановления позиции
-            # после того как все виджеты отрисованы
-            QTimer.singleShot(0, self._restore_cursor_position)
+            # Используем большую задержку (100ms) чтобы дать время изображениям полностью отрисоваться
+            QTimer.singleShot(100, self._restore_cursor_position)
 
     def _force_window_activation_windows(self):
         """Принудительная активация окна на Windows (более агрессивная)"""
