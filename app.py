@@ -26,6 +26,9 @@ def main():
     hotkeys = HotkeyController(window, config)
     hotkeys.start()
     
+    # Корректная остановка хоткеев при выходе
+    app.aboutToQuit.connect(hotkeys.stop)
+    
     window.show_and_focus()
     sys.exit(app.exec())
 
