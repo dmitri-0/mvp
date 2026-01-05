@@ -1,12 +1,17 @@
 {
   "database_path": "notes.db",
   "font_family": "Consolas",
-  "font_size": 14,
+  "font_size": 11,
   "hotkeys": {
-    "show_window": "<alt>+s",
-    "toggle_focus": "<f1>",
-    "add_note": "F4",
-    "delete_note": "F8",
-    "quit": "<shift>+<esc>"
+    "global": {
+      "show_window": "<alt>+s",
+      "quit": "<shift>+<esc>"
+    },
+    "local": {
+      "toggle_focus": "F3",
+      "add_note": "F4",
+      "delete_note": "F8",
+      "settings": "Ctrl+,"
+    }
   }
 }
