@@ -1,4 +1,5 @@
 from datetime import datetime
+import sys
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFont, QTextDocument, QKeySequence, QShortcut, QImage, QTextCursor, QTextCharFormat
 from PySide6.QtWidgets import (
@@ -436,15 +437,63 @@ class MainWindow(QMainWindow):
             if iter.value():
                 self.tree_notes.setCurrentItem(iter.value())
 
+    def _force_window_to_front_windows(self):
+        """Принудительный вывод окна на передний план (Windows)"""
+        if sys.platform == 'win32':
+            try:
+                import ctypes
+                from ctypes import wintypes
+                
+                # Получаем HWND окна
+                hwnd = int(self.winId())
+                
+                # Константы Windows
+                SW_RESTORE = 9
+                SW_SHOW = 5
+                HWND_TOP = 0
+                SWP_NOMOVE = 0x0002
+                SWP_NOSIZE = 0x0001
+                SWP_SHOWWINDOW = 0x0040
+                
+                # Восстанавливаем окно если свернуто
+                ctypes.windll.user32.ShowWindow(hwnd, SW_RESTORE)
+                
+                # Устанавливаем окно поверх всех
+                ctypes.windll.user32.SetWindowPos(
+                    hwnd, HWND_TOP, 0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+                )
+                
+                # Форсируем активацию окна
+                ctypes.windll.user32.SetForegroundWindow(hwnd)
+                
+                # Дополнительно: мигаем окном если не удалось активировать
+                ctypes.windll.user32.FlashWindow(hwnd, True)
+                
+            except Exception as e:
+                print(f"Ошибка при активации окна (Windows): {e}")
+
     def show_and_focus(self):
         """Показать и активировать окно"""
+        # Снимаем флаг минимизации если был установлен
+        self.setWindowState(self.windowState() & ~Qt.WindowMinimized | Qt.WindowActive)
+        
+        # Показываем окно
         self.show()
+        
+        # Стандартные методы Qt
         self.raise_()
         self.activateWindow()
-
+        
+        # Специальная обработка для Windows
+        if sys.platform == 'win32':
+            # Небольшая задержка для корректной работы
+            QTimer.singleShot(50, self._force_window_to_front_windows)
+        
         # Фокус на редактор если заметка выбрана
         if self.current_note_id:
-            self.editor.setFocus()
+            # Задержка для надежной установки фокуса
+            QTimer.singleShot(100, lambda: self.editor.setFocus())
 
     def hide_to_tray(self):
         """Скрыть в трей"""
