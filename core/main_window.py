@@ -121,6 +121,7 @@ class MainWindow(QMainWindow):
         # Флаги защиты от гонок событий
         self._is_switching_note = False
         self._is_reloading_tree = False
+        self._first_show = True  # Флаг для первого показа окна
 
         # Шорткаты
         self._setup_shortcuts()
@@ -478,8 +479,8 @@ class MainWindow(QMainWindow):
                         image,
                     )
 
-            # Восстановление курсора
-            if cursor_pos is not None:
+            # Восстановление курсора - только если окно уже было показано
+            if not self._first_show and cursor_pos is not None:
                 cursor = self.editor.textCursor()
                 if cursor_pos <= len(self.editor.toPlainText()):
                     cursor.setPosition(cursor_pos)
@@ -532,6 +533,40 @@ class MainWindow(QMainWindow):
             iter = QTreeWidgetItemIterator(self.tree_notes)
             if iter.value():
                 self.tree_notes.setCurrentItem(iter.value())
+
+    def _restore_cursor_position(self):
+        """Отложенное восстановление позиции курсора после показа окна"""
+        if not self.current_note_id:
+            return
+
+        row = self.repo.get_note(self.current_note_id)
+        if not row:
+            return
+
+        _, _, _, _, cursor_pos, _ = row
+
+        if cursor_pos is not None:
+            cursor = self.editor.textCursor()
+            if cursor_pos <= len(self.editor.toPlainText()):
+                cursor.setPosition(cursor_pos)
+            else:
+                cursor.movePosition(QTextCursor.End)
+            self.editor.setTextCursor(cursor)
+            
+            # Принудительно обновляем представление и скролл
+            self.editor.ensureCursorVisible()
+            self.editor.update()
+
+    def showEvent(self, event):
+        """Обработка события показа окна"""
+        super().showEvent(event)
+        
+        # При первом показе восстанавливаем позицию курсора с задержкой
+        if self._first_show:
+            self._first_show = False
+            # Используем QTimer для отложенного восстановления позиции
+            # после того как все виджеты отрисованы
+            QTimer.singleShot(0, self._restore_cursor_position)
 
     def _force_window_activation_windows(self):
         """Принудительная активация окна на Windows (более агрессивная)"""
