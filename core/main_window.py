@@ -1,6 +1,6 @@
 # core/main_window.py
 from datetime import datetime
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QEvent
 from PySide6.QtGui import QFont, QTextDocument, QKeySequence, QShortcut, QImage, QTextCursor
 from PySide6.QtWidgets import (
     QMainWindow, QTreeWidget, QTreeWidgetItem, QTreeWidgetItemIterator, QSplitter,
@@ -37,6 +37,11 @@ class SettingsDialog(QDialog):
         self.font_size_spin.setRange(8, 24)
         self.font_size_spin.setValue(config.get("font_size", 11))
         layout.addRow("Размер шрифта:", self.font_size_spin)
+        
+        # Шорткат смены фокуса
+        hotkeys = config.get("hotkeys", {})
+        self.focus_key_edit = QLineEdit(hotkeys.get("toggle_focus", "Tab"))
+        layout.addRow("Смена фокуса (Tab):", self.focus_key_edit)
 
         # Кнопки
         btn_save = QPushButton("Сохранить")
@@ -56,6 +61,10 @@ class SettingsDialog(QDialog):
         self.config.set("database_path", self.db_path_edit.text())
         self.config.set("font_family", self.font_family_edit.text())
         self.config.set("font_size", self.font_size_spin.value())
+        
+        hotkeys = self.config.get("hotkeys", {})
+        hotkeys["toggle_focus"] = self.focus_key_edit.text()
+        self.config.set("hotkeys", hotkeys)
 
         QMessageBox.information(
             self,
@@ -80,11 +89,13 @@ class MainWindow(QMainWindow):
         self.tree_notes.setHeaderLabel("Notes")
         self.tree_notes.currentItemChanged.connect(self.on_note_selected)
         self.tree_notes.setSelectionMode(QTreeWidget.ExtendedSelection)
+        self.tree_notes.installEventFilter(self)
 
         # Правая панель - редактор
         self.editor = NoteEditor()
         self.editor.setAcceptRichText(True)
         self.editor.set_context(self.repo, lambda: self.current_note_id)
+        self.editor.installEventFilter(self)
 
         # Применение шрифта
         self._apply_font()
@@ -129,10 +140,6 @@ class MainWindow(QMainWindow):
 
     def _setup_shortcuts(self):
         """Настройка горячих клавиш"""
-        # Alt+S - переключение между деревом и редактором
-        toggle_shortcut = QShortcut(QKeySequence("Alt+S"), self)
-        toggle_shortcut.activated.connect(self.toggle_focus)
-
         # F4 - добавить заметку
         add_shortcut = QShortcut(QKeySequence("F4"), self)
         add_shortcut.activated.connect(self.add_note)
@@ -144,15 +151,35 @@ class MainWindow(QMainWindow):
         # Ctrl+, - открыть настройки
         settings_shortcut = QShortcut(QKeySequence("Ctrl+,"), self)
         settings_shortcut.activated.connect(self.open_settings)
+        
+        # Обновление клавиши смены фокуса для eventFilter
+        hotkeys = self.config.get("hotkeys", {})
+        self.toggle_focus_key = QKeySequence(hotkeys.get("toggle_focus", "Tab"))
+
+    def eventFilter(self, obj, event):
+        """Перехват событий клавиатуры для смены фокуса и табуляции"""
+        if event.type() == QEvent.KeyPress:
+            # Проверка на Shift+Tab в редакторе (вставка табуляции)
+            if obj == self.editor and event.key() == Qt.Key_Tab and (event.modifiers() & Qt.ShiftModifier):
+                cursor = self.editor.textCursor()
+                cursor.insertText("\t")
+                return True
+            
+            # Проверка клавиши смены фокуса
+            if event.matches(self.toggle_focus_key):
+                self.toggle_focus()
+                return True
+                
+        return super().eventFilter(obj, event)
 
     def toggle_focus(self):
         """Переключение фокуса между деревом и редактором"""
-        if self.tree_notes.hasFocus():
-            self.editor.setFocus()
-            self.focused_widget = self.editor
-        else:
+        if self.editor.hasFocus():
             self.tree_notes.setFocus()
             self.focused_widget = self.tree_notes
+        else:
+            self.editor.setFocus()
+            self.focused_widget = self.editor
 
     def add_note(self):
         """Добавление новой заметки с автоматическим именованием"""
@@ -204,6 +231,8 @@ class MainWindow(QMainWindow):
         """Открытие окна настроек"""
         dialog = SettingsDialog(self.config, self)
         if dialog.exec():
+            # Обновляем шорткаты
+            self._setup_shortcuts()
             # Применение новых настроек
             self._apply_font()
             # Обновить текущую заметку чтобы применился шрифт (если есть)

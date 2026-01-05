@@ -25,7 +25,7 @@ class Config:
             "font_size": 11,
             "hotkeys": {
                 "show_window": "<alt>+s",
-                "toggle_focus": "<alt>+s",
+                "toggle_focus": "Tab",
                 "add_note": "F4",
                 "delete_note": "F8",
                 "quit": "<shift>+<esc>"
