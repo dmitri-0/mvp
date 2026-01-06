@@ -1,6 +1,6 @@
 from datetime import datetime
-from PySide6.QtCore import QBuffer, QByteArray, QIODevice, Signal, QUrl, QMimeData
-from PySide6.QtGui import QImage, QTextDocument, QTextCursor, QTextCharFormat
+from PySide6.QtCore import QBuffer, QByteArray, QIODevice, Signal, QUrl, QMimeData, Qt
+from PySide6.QtGui import QImage, QTextDocument, QTextCursor, QTextCharFormat, QKeyEvent
 from PySide6.QtWidgets import QTextEdit
 import re
 import base64
@@ -27,6 +27,20 @@ class NoteEditor(QTextEdit):
     def focusOutEvent(self, event):
         super().focusOutEvent(event)
         self.focusOut.emit()
+
+    def keyPressEvent(self, event: QKeyEvent):
+        """Переопределённая обработка нажатий клавиш"""
+        # Обрабатываем Enter/Return для корректной вставки новых строк
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            # Вставляем новую строку через insertHtml для консистентности
+            cursor = self.textCursor()
+            cursor.insertHtml("<br/>")
+            self.setTextCursor(cursor)
+            event.accept()
+            return
+        
+        # Для остальных клавиш используем стандартную обработку
+        super().keyPressEvent(event)
     
     def _parse_id_from_name(self, name: str) -> int | None:
         """Извлечение числового ID из URL (поддержка формата IPv4 для Qt)"""
