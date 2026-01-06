@@ -116,6 +116,12 @@ class NoteRepository:
         cursor.execute("SELECT id, name, bytes, mime FROM attachments WHERE note_id=? AND kind='image'", (note_id,))
         return cursor.fetchall()
 
+    def get_attachment(self, attachment_id):
+        """Получить вложение по ID"""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT id, note_id, name, bytes, mime FROM attachments WHERE id=?", (attachment_id,))
+        return cursor.fetchone()
+
     def add_attachment(self, note_id, name, image_bytes, mime):
         """Добавить вложение к заметке"""
         cursor = self.conn.cursor()
