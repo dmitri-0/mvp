@@ -1,11 +1,10 @@
 {
   "database_path": "notes.db",
   "font_family": "Consolas",
-  "font_size": 11,
+  "font_size": 14,
   "hotkeys": {
     "global": {
-      "show_window": "<alt>+s",
-      "quit": "<shift>+<esc>"
+      "show_window": "<alt>+s"
     },
     "local": {
       "toggle_focus": "F3",
