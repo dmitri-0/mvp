@@ -227,9 +227,12 @@ class MainWindow(QMainWindow):
             self.settings_shortcut = QShortcut(QKeySequence(settings_key), self)
             self.settings_shortcut.activated.connect(self.open_settings)
 
-        # Shift+Esc - выход
-        if not hasattr(self, 'quit_shortcut'):
-            self.quit_shortcut = QShortcut(QKeySequence("Shift+Esc"), self)
+        # Shift+Esc - выход (теперь настраиваемый)
+        quit_key = local_keys.get("quit", "Shift+Esc")
+        if getattr(self, 'quit_shortcut', None):
+            self.quit_shortcut.setKey(QKeySequence(quit_key))
+        else:
+            self.quit_shortcut = QShortcut(QKeySequence(quit_key), self)
             self.quit_shortcut.activated.connect(self.quit_app)
 
         # Навигация по дереву, когда фокус в редакторе (Alt+стрелки по умолчанию)
