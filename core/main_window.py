@@ -91,6 +91,9 @@ class MainWindow(QMainWindow):
         self.config = config
         self.setWindowTitle("Notes Manager")
         self.resize(1000, 600)
+        
+        # Восстановление сохраненной геометрии окна
+        self._restore_window_geometry()
 
         # Левая панель - дерево заметок
         self.tree_notes = QTreeWidget()
@@ -141,6 +144,31 @@ class MainWindow(QMainWindow):
             if handled:
                 return handled, result
         return super().nativeEvent(eventType, message)
+
+    def resizeEvent(self, event):
+        """Сохранение размера окна при изменении"""
+        super().resizeEvent(event)
+        self._save_window_geometry()
+
+    def _save_window_geometry(self):
+        """Сохранение геометрии окна в config.json"""
+        geometry = {
+            "width": self.width(),
+            "height": self.height(),
+            "x": self.x(),
+            "y": self.y()
+        }
+        self.config.set("window_geometry", geometry)
+
+    def _restore_window_geometry(self):
+        """Восстановление геометрии окна из config.json"""
+        geometry = self.config.get("window_geometry")
+        if geometry:
+            self.resize(geometry.get("width", 1000), geometry.get("height", 600))
+            x = geometry.get("x")
+            y = geometry.get("y")
+            if x is not None and y is not None:
+                self.move(x, y)
 
     def _apply_font(self):
         """Применение настроек шрифта к редактору"""
