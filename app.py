@@ -25,6 +25,11 @@ def main():
     # Контроллеры
     tray = TrayController(window)
     hotkeys = HotkeyController(window, config)
+    
+    # ВАЖНО: устанавливаем ссылку на контроллер горячих клавиш в окно
+    # чтобы nativeEvent мог их обрабатывать
+    window.set_hotkey_controller(hotkeys)
+    
     hotkeys.start()
     
     # Корректная остановка хоткеев при выходе и очистка буфера ввода
