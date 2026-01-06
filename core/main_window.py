@@ -1,6 +1,6 @@
 from datetime import datetime
 import sys
-from PySide6.QtCore import Qt, QTimer, QEvent
+from PySide6.QtCore import Qt, QEvent, QUrl
 from PySide6.QtGui import QFont, QTextDocument, QKeySequence, QShortcut, QImage, QTextCursor, QTextCharFormat
 from PySide6.QtWidgets import (
     QMainWindow, QTreeWidget, QTreeWidgetItem, QTreeWidgetItemIterator, QSplitter,
@@ -121,7 +121,6 @@ class MainWindow(QMainWindow):
         # Флаги защиты от гонок событий
         self._is_switching_note = False
         self._is_reloading_tree = False
-        self._first_show = True  # Флаг для первого показа окна
 
         # Шорткаты
         self._setup_shortcuts()
@@ -333,6 +332,21 @@ class MainWindow(QMainWindow):
         _, _, _, body_html, _, _ = row
 
         self.editor.blockSignals(True)
+
+        # Важно: зарегистрировать ресурсы ДО setHtml, иначе document/layout
+        # сначала строится с placeholder-иконками (треугольники), а размеры
+        # картинок учитываются только при повторном чтении.
+        attachments = self.repo.get_attachments(self.current_note_id)
+        doc = self.editor.document()
+        for att_id, name, img_bytes, mime in attachments:
+            if img_bytes:
+                image = QImage.fromData(img_bytes)
+                doc.addResource(
+                    QTextDocument.ImageResource,
+                    QUrl(f"noteimg://{att_id}"),
+                    image,
+                )
+
         self.editor.setHtml(body_html or "")
 
         # Принудительно применяем шрифт при перезагрузке
@@ -462,25 +476,30 @@ class MainWindow(QMainWindow):
             nid, parent_id, title, body_html, cursor_pos, updated_at = row
 
             self.editor.blockSignals(True)
+
+            # Ключевой момент:
+            # Раньше setHtml() выполнялся ДО addResource().
+            # Тогда QTextDocument строил layout с placeholder-иконками,
+            # и размеры картинок "подхватывались" только при повторном открытии заметки.
+            attachments = self.repo.get_attachments(note_id)
+            doc = self.editor.document()
+            for att_id, name, img_bytes, mime in attachments:
+                if img_bytes:
+                    image = QImage.fromData(img_bytes)
+                    doc.addResource(
+                        QTextDocument.ImageResource,
+                        QUrl(f"noteimg://{att_id}"),
+                        image,
+                    )
+
             self.editor.setHtml(body_html or "")
 
             # Применяем шрифт ко всему содержимому при открытии
             font_size = self.config.get("font_size", 11)
             self._force_font_size(font_size)
 
-            # Загрузить картинки в ресурсы документа
-            attachments = self.repo.get_attachments(note_id)
-            for att_id, name, img_bytes, mime in attachments:
-                if img_bytes:
-                    image = QImage.fromData(img_bytes)
-                    self.editor.document().addResource(
-                        QTextDocument.ImageResource,
-                        f"noteimg://{att_id}",
-                        image,
-                    )
-
-            # Восстановление курсора - только если окно уже было показано
-            if not self._first_show and cursor_pos is not None:
+            # Восстановление курсора
+            if cursor_pos is not None:
                 cursor = self.editor.textCursor()
                 if cursor_pos <= len(self.editor.toPlainText()):
                     cursor.setPosition(cursor_pos)
@@ -533,39 +552,6 @@ class MainWindow(QMainWindow):
             iter = QTreeWidgetItemIterator(self.tree_notes)
             if iter.value():
                 self.tree_notes.setCurrentItem(iter.value())
-
-    def _restore_cursor_position(self):
-        """Отложенное восстановление позиции курсора после показа окна"""
-        if not self.current_note_id:
-            return
-
-        row = self.repo.get_note(self.current_note_id)
-        if not row:
-            return
-
-        _, _, _, _, cursor_pos, _ = row
-
-        if cursor_pos is not None:
-            cursor = self.editor.textCursor()
-            if cursor_pos <= len(self.editor.toPlainText()):
-                cursor.setPosition(cursor_pos)
-            else:
-                cursor.movePosition(QTextCursor.End)
-            self.editor.setTextCursor(cursor)
-            
-            # Принудительно обновляем представление и скролл
-            self.editor.viewport().update()
-            self.editor.ensureCursorVisible()
-
-    def showEvent(self, event):
-        """Обработка события показа окна"""
-        super().showEvent(event)
-        
-        # При первом показе восстанавливаем позицию курсора с задержкой
-        if self._first_show:
-            self._first_show = False
-            # Используем большую задержку (100ms) чтобы дать время изображениям полностью отрисоваться
-            QTimer.singleShot(100, self._restore_cursor_position)
 
     def _force_window_activation_windows(self):
         """Принудительная активация окна на Windows (более агрессивная)"""

@@ -1,5 +1,5 @@
 from datetime import datetime
-from PySide6.QtCore import QBuffer, QByteArray, QIODevice, Signal
+from PySide6.QtCore import QBuffer, QByteArray, QIODevice, Signal, QUrl
 from PySide6.QtGui import QImage, QTextDocument
 from PySide6.QtWidgets import QTextEdit
 
@@ -49,9 +49,9 @@ class NoteEditor(QTextEdit):
                 att_id = self.repo.add_attachment(self.current_note_id, name, img_bytes, "image/png")
 
                 # Регистрация ресурса и вставка HTML
-                url = f"noteimg://{att_id}"
+                url = QUrl(f"noteimg://{att_id}")
                 self.document().addResource(QTextDocument.ImageResource, url, image)
-                self.textCursor().insertHtml(f'<img src="{url}" />')
+                self.textCursor().insertHtml(f'<img src="{url.toString()}" />')
                 return
 
         super().insertFromMimeData(source)
