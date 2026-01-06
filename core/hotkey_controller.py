@@ -31,6 +31,7 @@ class HotkeyController:
     MOD_SHIFT = 0x0004
     MOD_WIN = 0x0008
     WM_HOTKEY = 0x0312
+    VK_ESCAPE = 0x1B
     
     def __init__(self, window, config):
         self.window = window
@@ -43,6 +44,7 @@ class HotkeyController:
         self._listener = None
         self._native_hotkeys = {}  # id -> callback
         self._registered_ids = []
+        self._current_id_counter = 1
 
     def start(self):
         """Запуск прослушивания горячих клавиш"""
@@ -54,12 +56,13 @@ class HotkeyController:
             global_keys = hotkeys
 
         show_key = global_keys.get("show_window", "<alt>+s")
-        # quit_key = global_keys.get("quit", "<shift>+<esc>") # Quit пока оставим на pynput или вообще уберем из глобальных если не нужно
+        quit_key = global_keys.get("quit", "<shift>+<esc>")
         
         if sys.platform == 'win32':
             self._register_native_windows(show_key, self.signals.show_signal.emit)
+            self._register_native_windows(quit_key, self.signals.quit_signal.emit)
         else:
-            self._start_pynput(show_key)
+            self._start_pynput(show_key, quit_key)
 
     def stop(self):
         """Остановка прослушивания"""
@@ -70,13 +73,14 @@ class HotkeyController:
             self._listener.stop()
             self._listener = None
 
-    def _start_pynput(self, show_key):
+    def _start_pynput(self, show_key, quit_key):
         if not PYNPUT_AVAILABLE:
             print("Pynput not available")
             return
 
         hotkey_map = {
             show_key: self.signals.show_signal.emit,
+            quit_key: self.signals.quit_signal.emit,
         }
         
         try:
@@ -106,8 +110,9 @@ class HotkeyController:
         if 'win' in parts[:-1] or 'cmd' in parts[:-1]: mods |= self.MOD_WIN
         
         # Код клавиши
-        # Простой маппинг для букв и цифр
-        if len(key_char) == 1:
+        if key_char == 'esc' or key_char == 'escape':
+            vk = self.VK_ESCAPE
+        elif len(key_char) == 1:
             vk = ord(key_char.upper())
         else:
             # Можно расширить маппинг для F-клавиш и прочего если нужно
@@ -126,11 +131,10 @@ class HotkeyController:
             modifiers, vk = self._parse_hotkey(key_string)
             if vk == 0:
                 print(f"Could not parse hotkey: {key_string}")
-                # Fallback to pynput if parsing failed
-                self._start_pynput(key_string)
                 return
 
-            hotkey_id = 1 # Простой ID, можно сделать генератор если будет много
+            hotkey_id = self._current_id_counter
+            self._current_id_counter += 1
             
             if user32.RegisterHotKey(hwnd, hotkey_id, modifiers, vk):
                 self._native_hotkeys[hotkey_id] = callback
@@ -152,6 +156,7 @@ class HotkeyController:
                 user32.UnregisterHotKey(hwnd, hid)
             self._registered_ids.clear()
             self._native_hotkeys.clear()
+            self._current_id_counter = 1
         except Exception:
             pass
 
