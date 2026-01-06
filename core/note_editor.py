@@ -1,6 +1,6 @@
 from datetime import datetime
 from PySide6.QtCore import QBuffer, QByteArray, QIODevice, Signal, QUrl, QMimeData
-from PySide6.QtGui import QImage, QTextDocument
+from PySide6.QtGui import QImage, QTextDocument, QTextCursor, QTextCharFormat
 from PySide6.QtWidgets import QTextEdit
 import re
 
@@ -27,6 +27,40 @@ class NoteEditor(QTextEdit):
         super().focusOutEvent(event)
         self.focusOut.emit()
 
+    def createMimeDataFromSelection(self):
+        """Создание MIME-данных при копировании (добавляем поддержку внешних приложений)"""
+        mime = super().createMimeDataFromSelection()
+        
+        # Если выделена картинка, добавляем её как ImageData в буфер
+        cursor = self.textCursor()
+        if cursor.hasSelection() and not cursor.selection().isEmpty():
+            start = cursor.selectionStart()
+            end = cursor.selectionEnd()
+            
+            # Проверяем, выделен ли ровно один символ (картинка - это 1 символ)
+            if end - start == 1:
+                tmp_cursor = QTextCursor(self.document())
+                tmp_cursor.setPosition(start)
+                tmp_cursor.movePosition(QTextCursor.NextCharacter, QTextCursor.KeepAnchor)
+                fmt = tmp_cursor.charFormat()
+                
+                if fmt.isImageFormat():
+                    name = fmt.toImageFormat().name()
+                    if name.startswith("noteimg://"):
+                        try:
+                            att_id = int(name.replace("noteimg://", ""))
+                            if self.repo:
+                                att_data = self.repo.get_attachment(att_id)
+                                if att_data:
+                                    _, _, _, img_bytes, _ = att_data
+                                    if img_bytes:
+                                        img = QImage.fromData(img_bytes)
+                                        mime.setImageData(img)
+                        except Exception as e:
+                            print(f"Error exporting image to clipboard: {e}")
+                            
+        return mime
+
     def canInsertFromMimeData(self, source):
         """Проверка возможности вставки из буфера обмена"""
         if source.hasImage():
@@ -35,36 +69,26 @@ class NoteEditor(QTextEdit):
 
     def insertFromMimeData(self, source):
         """Вставка данных из буфера обмена (поддержка изображений)"""
-        # Если есть изображение в буфере (скриншот или копирование картинки)
         if source.hasImage() and self.repo and self.current_note_id:
-            # Проверяем, нет ли HTML с noteimg (при копировании выделения текста+картинки)
-            # hasImage() часто True только если в буфере чистое изображение.
-            # Если выделен текст и картинка, hasImage может быть False, но hasHtml True.
-            # Однако, иногда (в зависимости от OS) может быть и то и то.
-            # Приоритет отдаем обработке HTML, если там есть наши картинки.
-            pass
+            pass  # Fallthrough to logic below to prioritize HTML if available
 
         # Обработка HTML для поддержки копирования картинок между заметками
         if source.hasHtml() and self.repo and self.current_note_id:
             html = source.html()
             
             # Поиск всех ссылок на изображения noteimg://
-            pattern = re.compile(r'src=["\']noteimg://(\d+)["\']')
+            # Поддержка разных форматов атрибута src (с кавычками и без)
+            pattern = re.compile(r'src=["\']?noteimg://(\d+)["\']?')
             matches = pattern.findall(html)
             
             if matches:
-                new_html = html
-                found_replacements = False
+                id_map = {}
                 processed_ids = set()
 
                 for old_att_id in matches:
                     if old_att_id in processed_ids:
                         continue
                     processed_ids.add(old_att_id)
-
-                    # Проверяем, загружен ли ресурс. Если нет или если это новая заметка - копируем.
-                    # Даже если ресурс есть, при вставке в НОВУЮ заметку лучше создать копию,
-                    # чтобы вложения были независимыми.
                     
                     try:
                         att_id_int = int(old_att_id)
@@ -73,24 +97,32 @@ class NoteEditor(QTextEdit):
                         if att_data:
                             _, _, name, img_bytes, mime = att_data
                             
-                            # Создаем новое вложение для текущей заметки
+                            # Создаем копию вложения для текущей заметки
                             new_name = f"copy_{name}"
                             new_att_id = self.repo.add_attachment(self.current_note_id, new_name, img_bytes, mime)
                             
-                            # Регистрируем ресурс
+                            # Регистрируем ресурс в документе
                             if img_bytes:
                                 image = QImage.fromData(img_bytes)
                                 url = QUrl(f"noteimg://{new_att_id}")
                                 self.document().addResource(QTextDocument.ImageResource, url, image)
                             
-                            # Заменяем ID в HTML
-                            # Используем regex для замены только точных вхождений
-                            new_html = new_html.replace(f'noteimg://{old_att_id}', f'noteimg://{new_att_id}')
-                            found_replacements = True
+                            # Сохраняем маппинг для замены
+                            id_map[old_att_id] = new_att_id
                     except Exception as e:
                         print(f"Error processing attachment {old_att_id}: {e}")
                 
-                if found_replacements:
+                if id_map:
+                    # Функция замены для regex, чтобы менять только нужные ID в контексте src
+                    def replacer(match):
+                        full_match = match.group(0)
+                        old_id = match.group(1)
+                        if old_id in id_map:
+                            return full_match.replace(f"noteimg://{old_id}", f"noteimg://{id_map[old_id]}")
+                        return full_match
+
+                    new_html = pattern.sub(replacer, html)
+                    
                     new_source = QMimeData()
                     new_source.setHtml(new_html)
                     if source.hasText():
@@ -98,7 +130,7 @@ class NoteEditor(QTextEdit):
                     super().insertFromMimeData(new_source)
                     return
 
-        # Стандартная обработка чистого изображения (если не перехвачено HTML выше)
+        # Стандартная обработка чистого изображения (если нет HTML или вставка из файла/скриншота)
         if source.hasImage() and self.repo and self.current_note_id:
             image = source.imageData()
             if isinstance(image, QImage):
