@@ -110,12 +110,16 @@ class MainWindow(QMainWindow):
         # Применение шрифта
         self._apply_font()
 
-        splitter = QSplitter(Qt.Horizontal)
-        splitter.addWidget(self.tree_notes)
-        splitter.addWidget(self.editor)
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 3)
-        self.setCentralWidget(splitter)
+        self.splitter = QSplitter(Qt.Horizontal)
+        self.splitter.addWidget(self.tree_notes)
+        self.splitter.addWidget(self.editor)
+        self.splitter.setStretchFactor(0, 1)
+        self.splitter.setStretchFactor(1, 3)
+        self.splitter.splitterMoved.connect(self._save_splitter_state)
+        self.setCentralWidget(self.splitter)
+        
+        # Восстановление позиции сплиттера
+        self._restore_splitter_state()
 
         self.current_note_id = None  # id заметки, загруженной в редактор
         self.focused_widget = self.tree_notes
@@ -169,6 +173,16 @@ class MainWindow(QMainWindow):
             y = geometry.get("y")
             if x is not None and y is not None:
                 self.move(x, y)
+
+    def _save_splitter_state(self, pos=None, index=None):
+        """Сохранение позиции сплиттера"""
+        self.config.set("splitter_sizes", self.splitter.sizes())
+
+    def _restore_splitter_state(self):
+        """Восстановление позиции сплиттера"""
+        sizes = self.config.get("splitter_sizes")
+        if sizes:
+            self.splitter.setSizes(sizes)
 
     def _apply_font(self):
         """Применение настроек шрифта к редактору"""
