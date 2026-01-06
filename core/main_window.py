@@ -117,6 +117,7 @@ class MainWindow(QMainWindow):
         self.current_note_id = None  # id заметки, загруженной в редактор
         self.focused_widget = self.tree_notes
         self.toggle_focus_shortcut = None  # Ссылка на шорткат
+        self.hotkey_controller = None  # Сохраним ссылку на контроллер глобальных клавиш
 
         # Флаги защиты от гонок событий
         self._is_switching_note = False
@@ -128,6 +129,18 @@ class MainWindow(QMainWindow):
         # Загрузка и восстановление состояния
         self.load_notes_tree()
         self._restore_last_state()
+
+    def set_hotkey_controller(self, controller):
+        """Установить контроллер глобальных горячих клавиш"""
+        self.hotkey_controller = controller
+
+    def nativeEvent(self, eventType, message):
+        """Обработка нативных событий для глобальных горячих клавиш"""
+        if self.hotkey_controller:
+            handled, result = self.hotkey_controller.handle_native_event(eventType, message)
+            if handled:
+                return handled, result
+        return super().nativeEvent(eventType, message)
 
     def _apply_font(self):
         """Применение настроек шрифта к редактору"""
