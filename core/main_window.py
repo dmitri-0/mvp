@@ -473,6 +473,185 @@ class MainWindow(QMainWindow):
                 break
             iterator += 1
 
+    def load_notes_tree(self):
+        """Загрузка дерева заметок из БД"""
+        self._is_reloading_tree = True
+        self.tree_notes.blockSignals(True)
+
+        try:
+            # Сохраняем состояние раскрытия
+            expanded_ids = set()
+            iterator = QTreeWidgetItemIterator(self.tree_notes)
+            while iterator.value():
+                item = iterator.value()
+                if item.isExpanded():
+                    expanded_ids.add(item.data(0, Qt.UserRole))
+                iterator += 1
+
+            current_selected_id = None
+            cur_item = self.tree_notes.currentItem()
+            if cur_item is not None:
+                current_selected_id = cur_item.data(0, Qt.UserRole)
+
+            self.tree_notes.clear()
+            notes = self.repo.get_all_notes()
+
+            # 1) создаем все item'ы
+            items_map: dict[int, QTreeWidgetItem] = {}
+            for note_id, parent_id, title, body_html, cursor_pos, updated_at in notes:
+                item = QTreeWidgetItem([title])
+                item.setData(0, Qt.UserRole, note_id)
+                items_map[note_id] = item
+
+            # 2) собираем иерархию (порядок в БД теперь не важен)
+            root_items = []
+            for note_id, parent_id, title, body_html, cursor_pos, updated_at in notes:
+                item = items_map[note_id]
+                if parent_id is None or parent_id not in items_map:
+                    root_items.append(item)
+                else:
+                    items_map[parent_id].addChild(item)
+
+            self.tree_notes.addTopLevelItems(root_items)
+
+            # Восстанавливаем состояние раскрытия или раскрываем всё если пусто
+            if not expanded_ids:
+                self.tree_notes.expandAll()
+            else:
+                iterator = QTreeWidgetItemIterator(self.tree_notes)
+                while iterator.value():
+                    item = iterator.value()
+                    if item.data(0, Qt.UserRole) in expanded_ids:
+                        item.setExpanded(True)
+                    iterator += 1
+
+            # Восстанавливаем выделение (если было)
+            if current_selected_id:
+                item = items_map.get(current_selected_id)
+                if item is not None:
+                    self.tree_notes.setCurrentItem(item)
+
+        finally:
+            self.tree_notes.blockSignals(False)
+            self._is_reloading_tree = False
+
+    def on_note_selected(self, current_item, previous_item):
+        """Переключение на другую заметку"""
+        if self._is_reloading_tree:
+            return
+
+        # Важно: currentItemChanged вызывается когда текущий элемент уже изменен.
+        # Поэтому сохранение нужно делать по previous_item / previous_note_id.
+        previous_note_id = None
+        if previous_item is not None:
+            previous_note_id = previous_item.data(0, Qt.UserRole)
+
+        if previous_note_id and self.current_note_id == previous_note_id:
+            # В редакторе сейчас ещё текст предыдущей заметки -> сохраняем её
+            self._save_editor_content(previous_note_id, previous_item.text(0))
+
+        if not current_item:
+            self.current_note_id = None
+            self.editor.set_current_note_id(None)
+            return
+
+        note_id = current_item.data(0, Qt.UserRole)
+
+        self._is_switching_note = True
+        try:
+            self.current_note_id = note_id
+            self.editor.set_current_note_id(note_id)
+
+            # Сохраняем ID открытой заметки
+            self.repo.set_state("last_opened_note_id", note_id)
+
+            row = self.repo.get_note(note_id)
+            if not row:
+                self.editor.blockSignals(True)
+                self.editor.setHtml("")
+                self.editor.blockSignals(False)
+                return
+
+            nid, parent_id, title, body_html, cursor_pos, updated_at = row
+
+            self.editor.blockSignals(True)
+
+            # Ключевой момент:
+            # Раньше setHtml() выполнялся ДО addResource().
+            # Тогда QTextDocument строил layout с placeholder-иконками,
+            # и размеры картинок "подхватывались" только при повторном открытии заметки.
+            attachments = self.repo.get_attachments(note_id)
+            doc = self.editor.document()
+            for att_id, name, img_bytes, mime in attachments:
+                if img_bytes:
+                    image = QImage.fromData(img_bytes)
+                    doc.addResource(
+                        QTextDocument.ImageResource,
+                        QUrl(f"noteimg://{att_id}"),
+                        image,
+                    )
+
+            self.editor.setHtml(body_html or "")
+
+            # Применяем шрифт ко всему содержимому при открытии
+            font_size = self.config.get("font_size", 11)
+            self._force_font_size(font_size)
+
+            # Восстановление курсора
+            if cursor_pos is not None:
+                cursor = self.editor.textCursor()
+                if cursor_pos <= len(self.editor.toPlainText()):
+                    cursor.setPosition(cursor_pos)
+                else:
+                    cursor.movePosition(QTextCursor.End)
+                self.editor.setTextCursor(cursor)
+                self.editor.ensureCursorVisible()
+
+            self.editor.blockSignals(False)
+
+        finally:
+            self._is_switching_note = False
+
+    def save_current_note(self):
+        """Сохранение текущей заметки"""
+        if not self.current_note_id:
+            return
+
+        # Сохраняем только если редактор действительно привязан к этой заметке
+        if self.editor.current_note_id != self.current_note_id:
+            return
+
+        item = self.tree_notes.currentItem()
+        title = None
+        if item is not None and item.data(0, Qt.UserRole) == self.current_note_id:
+            title = item.text(0)
+
+        self._save_editor_content(self.current_note_id, title)
+
+    def _on_editor_focus_out(self):
+        """Ключевое событие: редактор теряет фокус."""
+        if self._is_switching_note:
+            return
+        self.save_current_note()
+
+    def _restore_last_state(self):
+        """Восстановление последней открытой заметки"""
+        last_id_str = self.repo.get_state("last_opened_note_id")
+        if last_id_str:
+            try:
+                last_id = int(last_id_str)
+                self._select_note_by_id(last_id)
+                if self.tree_notes.currentItem():
+                    self.tree_notes.setFocus()
+            except ValueError:
+                pass
+
+        # Если ничего не выбрали, выбираем первую
+        if not self.tree_notes.currentItem():
+            iter = QTreeWidgetItemIterator(self.tree_notes)
+            if iter.value():
+                self.tree_notes.setCurrentItem(iter.value())
+
     def show_and_focus(self):
         """Показать и активировать окно - используется единый метод аналогичный show_from_tray"""
         # Показываем окно нормально (не свернутым)
