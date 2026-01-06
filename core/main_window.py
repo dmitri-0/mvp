@@ -168,7 +168,6 @@ class MainWindow(QMainWindow):
 
         # Сохраняем позицию
         pos = cursor.position()
-        anchor = cursor.anchor()
 
         # Выделяем все
         cursor.select(QTextCursor.Document)
@@ -178,9 +177,9 @@ class MainWindow(QMainWindow):
         fmt.setFontPointSize(size)
         cursor.mergeCharFormat(fmt)
 
-        # Восстанавливаем позицию
-        cursor.setPosition(anchor)
-        cursor.setPosition(pos, QTextCursor.KeepAnchor)
+        # Восстанавливаем позицию БЕЗ выделения
+        cursor.clearSelection()
+        cursor.setPosition(min(pos, len(self.editor.toPlainText())))
         self.editor.setTextCursor(cursor)
 
     def _setup_shortcuts(self):
@@ -457,10 +456,7 @@ class MainWindow(QMainWindow):
 
         # Восстановление курсора
         cursor = self.editor.textCursor()
-        if cursor_pos <= len(self.editor.toPlainText()):
-            cursor.setPosition(cursor_pos)
-        else:
-            cursor.movePosition(QTextCursor.End)
+        cursor.setPosition(min(cursor_pos, len(self.editor.toPlainText())))
         self.editor.setTextCursor(cursor)
         self.editor.ensureCursorVisible()
 
@@ -603,10 +599,7 @@ class MainWindow(QMainWindow):
             # Восстановление курсора
             if cursor_pos is not None:
                 cursor = self.editor.textCursor()
-                if cursor_pos <= len(self.editor.toPlainText()):
-                    cursor.setPosition(cursor_pos)
-                else:
-                    cursor.movePosition(QTextCursor.End)
+                cursor.setPosition(min(cursor_pos, len(self.editor.toPlainText())))
                 self.editor.setTextCursor(cursor)
                 self.editor.ensureCursorVisible()
 
