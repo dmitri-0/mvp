@@ -11,7 +11,11 @@
       "toggle_focus": "F3",
       "add_note": "F4",
       "delete_note": "F8",
-      "settings": "Ctrl+,"
+      "settings": "Ctrl+,",
+      "navigate_up": "Alt+Up",
+      "navigate_down": "Alt+Down",
+      "navigate_left": "Alt+Left",
+      "navigate_right": "Alt+Right"
     }
   }
 }

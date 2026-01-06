@@ -205,18 +205,99 @@ class MainWindow(QMainWindow):
             self.toggle_focus_shortcut.activated.connect(self.toggle_focus)
 
         # F4 - добавить заметку
-        if not hasattr(self, 'add_note_shortcut'):
-            self.add_note_shortcut = QShortcut(QKeySequence("F4"), self)
+        add_note_key = local_keys.get("add_note", "F4")
+        if getattr(self, 'add_note_shortcut', None):
+            self.add_note_shortcut.setKey(QKeySequence(add_note_key))
+        else:
+            self.add_note_shortcut = QShortcut(QKeySequence(add_note_key), self)
             self.add_note_shortcut.activated.connect(self.add_note)
 
-        if not hasattr(self, 'del_note_shortcut'):
-            self.del_note_shortcut = QShortcut(QKeySequence("F8"), self)
+        del_note_key = local_keys.get("delete_note", "F8")
+        if getattr(self, 'del_note_shortcut', None):
+            self.del_note_shortcut.setKey(QKeySequence(del_note_key))
+        else:
+            self.del_note_shortcut = QShortcut(QKeySequence(del_note_key), self)
             self.del_note_shortcut.activated.connect(self.delete_notes)
 
         # Ctrl+, - открыть настройки
-        if not hasattr(self, 'settings_shortcut'):
-            self.settings_shortcut = QShortcut(QKeySequence("Ctrl+,"), self)
+        settings_key = local_keys.get("settings", "Ctrl+,")
+        if getattr(self, 'settings_shortcut', None):
+            self.settings_shortcut.setKey(QKeySequence(settings_key))
+        else:
+            self.settings_shortcut = QShortcut(QKeySequence(settings_key), self)
             self.settings_shortcut.activated.connect(self.open_settings)
+
+        # Навигация по дереву, когда фокус в редакторе (Alt+стрелки по умолчанию)
+        nav_up_key = local_keys.get("navigate_up", "Alt+Up")
+        nav_down_key = local_keys.get("navigate_down", "Alt+Down")
+        nav_left_key = local_keys.get("navigate_left", "Alt+Left")
+        nav_right_key = local_keys.get("navigate_right", "Alt+Right")
+
+        if getattr(self, 'nav_up_shortcut', None):
+            self.nav_up_shortcut.setKey(QKeySequence(nav_up_key))
+        else:
+            self.nav_up_shortcut = QShortcut(QKeySequence(nav_up_key), self)
+            self.nav_up_shortcut.activated.connect(lambda: self._navigate_tree_from_editor('up'))
+
+        if getattr(self, 'nav_down_shortcut', None):
+            self.nav_down_shortcut.setKey(QKeySequence(nav_down_key))
+        else:
+            self.nav_down_shortcut = QShortcut(QKeySequence(nav_down_key), self)
+            self.nav_down_shortcut.activated.connect(lambda: self._navigate_tree_from_editor('down'))
+
+        if getattr(self, 'nav_left_shortcut', None):
+            self.nav_left_shortcut.setKey(QKeySequence(nav_left_key))
+        else:
+            self.nav_left_shortcut = QShortcut(QKeySequence(nav_left_key), self)
+            self.nav_left_shortcut.activated.connect(lambda: self._navigate_tree_from_editor('left'))
+
+        if getattr(self, 'nav_right_shortcut', None):
+            self.nav_right_shortcut.setKey(QKeySequence(nav_right_key))
+        else:
+            self.nav_right_shortcut = QShortcut(QKeySequence(nav_right_key), self)
+            self.nav_right_shortcut.activated.connect(lambda: self._navigate_tree_from_editor('right'))
+
+    def _set_tree_current_item(self, item: QTreeWidgetItem | None):
+        if item is None:
+            return
+        self.tree_notes.setCurrentItem(item)
+        self.tree_notes.scrollToItem(item)
+
+    def _navigate_tree_from_editor(self, direction: str):
+        """Навигация по дереву, не забирая фокус у редактора."""
+        # Требование: работает только когда фокус в заметке.
+        if not self.editor.hasFocus():
+            return
+
+        current = self.tree_notes.currentItem()
+        if current is None:
+            first = self.tree_notes.topLevelItem(0)
+            self._set_tree_current_item(first)
+            return
+
+        if direction == 'up':
+            self._set_tree_current_item(self.tree_notes.itemAbove(current))
+            return
+
+        if direction == 'down':
+            self._set_tree_current_item(self.tree_notes.itemBelow(current))
+            return
+
+        if direction == 'left':
+            if current.isExpanded():
+                current.setExpanded(False)
+            else:
+                self._set_tree_current_item(current.parent())
+            return
+
+        if direction == 'right':
+            if current.childCount() <= 0:
+                return
+            if not current.isExpanded():
+                current.setExpanded(True)
+            else:
+                self._set_tree_current_item(current.child(0))
+            return
 
     def toggle_focus(self):
         """Переключение фокуса между деревом и редактором"""
