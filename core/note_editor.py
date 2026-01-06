@@ -26,6 +26,28 @@ class NoteEditor(QTextEdit):
     def focusOutEvent(self, event):
         super().focusOutEvent(event)
         self.focusOut.emit()
+    
+    def _parse_id_from_name(self, name: str) -> int | None:
+        """Извлечение числового ID из URL (поддержка формата IPv4 для Qt)"""
+        # Удаляем схему
+        clean = name.replace("noteimg://", "")
+        
+        # 1. Пробуем простое число
+        try:
+            return int(clean)
+        except ValueError:
+            pass
+            
+        # 2. Пробуем IPv4 (Qt может нормализовать noteimg://123 -> noteimg://0.0.0.123)
+        if clean.count('.') == 3:
+            try:
+                parts = list(map(int, clean.split('.')))
+                if len(parts) == 4:
+                    return (parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]
+            except ValueError:
+                pass
+                
+        return None
 
     def createMimeDataFromSelection(self):
         """Создание MIME-данных при копировании (добавляем поддержку внешних приложений)"""
@@ -47,17 +69,17 @@ class NoteEditor(QTextEdit):
                 if fmt.isImageFormat():
                     name = fmt.toImageFormat().name()
                     if name.startswith("noteimg://"):
-                        try:
-                            att_id = int(name.replace("noteimg://", ""))
-                            if self.repo:
+                        att_id = self._parse_id_from_name(name)
+                        if att_id and self.repo:
+                            try:
                                 att_data = self.repo.get_attachment(att_id)
                                 if att_data:
                                     _, _, _, img_bytes, _ = att_data
                                     if img_bytes:
                                         img = QImage.fromData(img_bytes)
                                         mime.setImageData(img)
-                        except Exception as e:
-                            print(f"Error exporting image to clipboard: {e}")
+                            except Exception as e:
+                                print(f"Error exporting image to clipboard: {e}")
                             
         return mime
 
@@ -77,22 +99,26 @@ class NoteEditor(QTextEdit):
             html = source.html()
             
             # Поиск всех ссылок на изображения noteimg://
-            # Поддержка разных форматов атрибута src (с кавычками и без)
-            pattern = re.compile(r'src=["\']?noteimg://(\d+)["\']?')
+            # Regex захватывает цифры и точки (для случаев, когда URL нормализован как IP)
+            pattern = re.compile(r'src=["\']?noteimg://([0-9\.]+)["\']?')
             matches = pattern.findall(html)
             
             if matches:
                 id_map = {}
                 processed_ids = set()
 
-                for old_att_id in matches:
-                    if old_att_id in processed_ids:
+                for raw_id in matches:
+                    if raw_id in processed_ids:
                         continue
-                    processed_ids.add(old_att_id)
+                    processed_ids.add(raw_id)
                     
                     try:
-                        att_id_int = int(old_att_id)
-                        att_data = self.repo.get_attachment(att_id_int)
+                        # Восстанавливаем оригинальный ID, используя имя "noteimg://" + raw_id
+                        att_id = self._parse_id_from_name(f"noteimg://{raw_id}")
+                        if not att_id:
+                            continue
+                            
+                        att_data = self.repo.get_attachment(att_id)
                         
                         if att_data:
                             _, _, name, img_bytes, mime = att_data
@@ -108,17 +134,17 @@ class NoteEditor(QTextEdit):
                                 self.document().addResource(QTextDocument.ImageResource, url, image)
                             
                             # Сохраняем маппинг для замены
-                            id_map[old_att_id] = new_att_id
+                            id_map[raw_id] = new_att_id
                     except Exception as e:
-                        print(f"Error processing attachment {old_att_id}: {e}")
+                        print(f"Error processing attachment {raw_id}: {e}")
                 
                 if id_map:
-                    # Функция замены для regex, чтобы менять только нужные ID в контексте src
+                    # Функция замены для regex
                     def replacer(match):
                         full_match = match.group(0)
-                        old_id = match.group(1)
-                        if old_id in id_map:
-                            return full_match.replace(f"noteimg://{old_id}", f"noteimg://{id_map[old_id]}")
+                        old_val = match.group(1)
+                        if old_val in id_map:
+                            return full_match.replace(f"noteimg://{old_val}", f"noteimg://{id_map[old_val]}")
                         return full_match
 
                     new_html = pattern.sub(replacer, html)
