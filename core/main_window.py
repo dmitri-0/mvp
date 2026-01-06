@@ -553,73 +553,32 @@ class MainWindow(QMainWindow):
             if iter.value():
                 self.tree_notes.setCurrentItem(iter.value())
 
-    def _force_window_activation_windows(self):
-        """Принудительная активация окна на Windows (более агрессивная)"""
-        if sys.platform != 'win32':
-            return
-
-        try:
-            import ctypes
-            from ctypes import wintypes
-
-            # Получаем HWND окна
-            hwnd = int(self.winId())
-
-            # Константы Windows API
-            SW_RESTORE = 9
-            HWND_TOPMOST = -1
-            HWND_NOTOPMOST = -2
-            SWP_NOMOVE = 0x0002
-            SWP_NOSIZE = 0x0001
-            SWP_SHOWWINDOW = 0x0040
-            SWP_NOACTIVATE = 0x0010
-
-            user32 = ctypes.windll.user32
-
-            # 1. Восстанавливаем окно если свернуто
-            user32.ShowWindow(hwnd, SW_RESTORE)
-
-            # 2. Временно делаем окно "always on top" для гарантированной активации
-            user32.SetWindowPos(
-                hwnd, HWND_TOPMOST, 0, 0, 0, 0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
-            )
-
-            # 3. Снимаем "always on top" статус
-            user32.SetWindowPos(
-                hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
-            )
-
-            # 4. Форсируем активацию окна
-            user32.SetForegroundWindow(hwnd)
-            user32.SetActiveWindow(hwnd)
-            user32.SetFocus(hwnd)
-
-            # 5. Убираем мигание в таскбаре
-            FLASHW_STOP = 0
-            user32.FlashWindow(hwnd, FLASHW_STOP)
-
-        except Exception as e:
-            print(f"Ошибка при активации окна (Windows): {e}")
-
     def show_and_focus(self):
-        """Показать и активировать окно"""
-        # Снимаем флаг минимизации если был установлен
-        self.setWindowState(self.windowState() & ~Qt.WindowMinimized | Qt.WindowActive)
-
-        # Специальная обработка для Windows - ДО показа окна
-        if sys.platform == 'win32':
-            self._force_window_activation_windows()
-
-        # Показываем окно
-        self.show()
-
-        # Стандартные методы Qt
-        self.raise_()
+        """Показать и активировать окно - используется единый метод аналогичный show_from_tray"""
+        # Показываем окно нормально (не свернутым)
+        self.showNormal()
+        # Активируем окно на передний план
         self.activateWindow()
-
-        # Фокус на редактор если заметка выбрана - без задержки
+        # Поднимаем окно выше других
+        self.raise_()
+        
+        # Дополнительная активация через Windows API для надежности
+        if sys.platform == 'win32':
+            try:
+                import ctypes
+                hwnd = int(self.winId())
+                user32 = ctypes.windll.user32
+                # SW_RESTORE = 9 (восстановить окно если свернуто)
+                user32.ShowWindow(hwnd, 9)
+                # Устанавливаем на передний план без звука
+                user32.SetForegroundWindow(hwnd)
+            except Exception as e:
+                print(f"Ошибка при активации окна через Windows API: {e}")
+        
+        # Обновляем открытые базы/заметки если необходимо
+        # self.refresh_opened_bases()  # Если есть аналогичный функционал
+        
+        # Фокус на редактор если заметка выбрана
         if self.current_note_id:
             self.editor.setFocus()
 
