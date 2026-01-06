@@ -56,13 +56,14 @@ class HotkeyController:
             global_keys = hotkeys
 
         show_key = global_keys.get("show_window", "<alt>+s")
-        quit_key = global_keys.get("quit", "<shift>+<esc>")
+        # Quit is strictly local now
+        # quit_key = global_keys.get("quit", "<shift>+<esc>")
         
         if sys.platform == 'win32':
             self._register_native_windows(show_key, self.signals.show_signal.emit)
-            self._register_native_windows(quit_key, self.signals.quit_signal.emit)
+            # self._register_native_windows(quit_key, self.signals.quit_signal.emit)
         else:
-            self._start_pynput(show_key, quit_key)
+            self._start_pynput(show_key)
 
     def stop(self):
         """Остановка прослушивания"""
@@ -73,14 +74,14 @@ class HotkeyController:
             self._listener.stop()
             self._listener = None
 
-    def _start_pynput(self, show_key, quit_key):
+    def _start_pynput(self, show_key):
         if not PYNPUT_AVAILABLE:
             print("Pynput not available")
             return
 
         hotkey_map = {
             show_key: self.signals.show_signal.emit,
-            quit_key: self.signals.quit_signal.emit,
+            # quit_key: self.signals.quit_signal.emit,
         }
         
         try:
