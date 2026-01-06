@@ -472,6 +472,26 @@ class MainWindow(QMainWindow):
                 break
             iterator += 1
 
+    def _expand_path_to_note(self, note_id: int):
+        """Раскрыть только те элементы дерева, которые ведут к указанной заметке"""
+        # Получаем путь от корня до заметки
+        path_ids = []
+        current_id = note_id
+        
+        # Строим путь снизу вверх
+        while current_id is not None:
+            note_data = self.repo.get_note(current_id)
+            if not note_data:
+                break
+            path_ids.append(current_id)
+            current_id = note_data[1]  # parent_id
+        
+        # Раскрываем элементы по пути (кроме самой заметки)
+        for path_id in path_ids[1:]:  # Пропускаем саму заметку
+            item = self._find_item_by_id(path_id)
+            if item:
+                item.setExpanded(True)
+
     def load_notes_tree(self):
         """Загрузка дерева заметок из БД"""
         self._is_reloading_tree = True
@@ -515,7 +535,9 @@ class MainWindow(QMainWindow):
 
             # Восстанавливаем состояние раскрытия или раскрываем всё если пусто
             if not expanded_ids:
-                self.tree_notes.expandAll()
+                # При первой загрузке дерево свернуто полностью
+                # Раскрытие только до last_opened_note_id произойдет в _restore_last_state
+                pass
             else:
                 iterator = QTreeWidgetItemIterator(self.tree_notes)
                 while iterator.value():
@@ -636,6 +658,8 @@ class MainWindow(QMainWindow):
         if last_id_str:
             try:
                 last_id = int(last_id_str)
+                # Раскрываем только путь к этой заметке
+                self._expand_path_to_note(last_id)
                 self._select_note_by_id(last_id)
                 if self.tree_notes.currentItem():
                     self.tree_notes.setFocus()
