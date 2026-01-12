@@ -1,19 +1,36 @@
 from datetime import datetime
 import sys
+
 from PySide6.QtCore import Qt, QEvent, QUrl, QTimer
-from PySide6.QtGui import QFont, QTextDocument, QKeySequence, QShortcut, QImage, QTextCursor, QTextCharFormat
+from PySide6.QtGui import QTextDocument, QKeySequence, QShortcut, QImage
 from PySide6.QtWidgets import (
-    QMainWindow, QTreeWidget, QTreeWidgetItem, QTreeWidgetItemIterator, QSplitter,
-    QApplication, QMessageBox
+    QApplication,
+    QMainWindow,
+    QMessageBox,
+    QSplitter,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QTreeWidgetItemIterator,
 )
+
+from core.clipboard_monitor import ClipboardMonitor
+from core.config import Config
 from core.note_editor import NoteEditor
 from core.repository import NoteRepository
-from core.config import Config
-from core.clipboard_monitor import ClipboardMonitor
+from core.ui.mixins.editor_storage_mixin import EditorStorageMixin
+from core.ui.mixins.editor_style_mixin import EditorStyleMixin
+from core.ui.mixins.tree_navigation_mixin import TreeNavigationMixin
+from core.ui.mixins.window_state_mixin import WindowStateMixin
 from core.ui.settings_dialog import SettingsDialog
 
 
-class MainWindow(QMainWindow):
+class MainWindow(
+    QMainWindow,
+    WindowStateMixin,
+    EditorStyleMixin,
+    TreeNavigationMixin,
+    EditorStorageMixin,
+):
     """Главное окно приложения"""
 
     def __init__(self, repo: NoteRepository, config: Config):
@@ -22,7 +39,7 @@ class MainWindow(QMainWindow):
         self.config = config
         self.setWindowTitle("Notes Manager")
         self.resize(1000, 600)
-        
+
         # Восстановление сохраненной геометрии окна
         self._restore_window_geometry()
 
@@ -48,7 +65,7 @@ class MainWindow(QMainWindow):
         self.splitter.setStretchFactor(1, 3)
         self.splitter.splitterMoved.connect(self._save_splitter_state)
         self.setCentralWidget(self.splitter)
-        
+
         # Восстановление позиции сплиттера
         self._restore_splitter_state()
 
@@ -60,7 +77,7 @@ class MainWindow(QMainWindow):
         # Флаги защиты от гонок событий
         self._is_switching_note = False
         self._is_reloading_tree = False
-        
+
         # Последняя активная ветка ("Текущие" или "Буфер обмена")
         self._last_active_branch = "Текущие"
 
@@ -99,76 +116,6 @@ class MainWindow(QMainWindow):
         super().resizeEvent(event)
         self._save_window_geometry()
 
-    def _save_window_geometry(self):
-        """Сохранение геометрии окна в config.json"""
-        geometry = {
-            "width": self.width(),
-            "height": self.height(),
-            "x": self.x(),
-            "y": self.y()
-        }
-        self.config.set("window_geometry", geometry)
-
-    def _restore_window_geometry(self):
-        """Восстановление геометрии окна из config.json"""
-        geometry = self.config.get("window_geometry")
-        if geometry:
-            self.resize(geometry.get("width", 1000), geometry.get("height", 600))
-            x = geometry.get("x")
-            y = geometry.get("y")
-            if x is not None and y is not None:
-                self.move(x, y)
-
-    def _save_splitter_state(self, pos=None, index=None):
-        """Сохранение позиции сплиттера"""
-        self.config.set("splitter_sizes", self.splitter.sizes())
-
-    def _restore_splitter_state(self):
-        """Восстановление позиции сплиттера"""
-        sizes = self.config.get("splitter_sizes")
-        if sizes:
-            self.splitter.setSizes(sizes)
-
-    def _apply_font(self):
-        """Применение настроек шрифта к редактору"""
-        font_family = self.config.get("font_family", "Consolas")
-        font_size = self.config.get("font_size", 11)
-        font = QFont(font_family, font_size)
-        font.setStyleHint(QFont.Monospace)
-        self.editor.setFont(font)
-
-        # Обновление стиля документа для мгновенного применения
-        doc = self.editor.document()
-        doc.setDefaultFont(font)
-        self.editor.setStyleSheet(
-            f"QTextEdit {{ font-family: '{font_family}'; font-size: {font_size}pt; }}"
-        )
-
-        # Принудительное обновление размера шрифта во всем документе (без сброса других стилей)
-        self._force_font_size(font_size)
-
-    def _force_font_size(self, size):
-        """Принудительно установить размер шрифта для всего содержимого"""
-        cursor = self.editor.textCursor()
-        if not cursor:
-            return
-
-        # Сохраняем позицию
-        pos = cursor.position()
-
-        # Выделяем все
-        cursor.select(QTextCursor.Document)
-
-        # Применяем только размер шрифта
-        fmt = QTextCharFormat()
-        fmt.setFontPointSize(size)
-        cursor.mergeCharFormat(fmt)
-
-        # Восстанавливаем позицию БЕЗ выделения
-        cursor.clearSelection()
-        cursor.setPosition(min(pos, len(self.editor.toPlainText())))
-        self.editor.setTextCursor(cursor)
-
     def _setup_shortcuts(self):
         """Настройка горячих клавиш"""
         # Смена фокуса
@@ -192,14 +139,14 @@ class MainWindow(QMainWindow):
 
         # F4 - добавить заметку
         add_note_key = local_keys.get("add_note", "F4")
-        if getattr(self, 'add_note_shortcut', None):
+        if getattr(self, "add_note_shortcut", None):
             self.add_note_shortcut.setKey(QKeySequence(add_note_key))
         else:
             self.add_note_shortcut = QShortcut(QKeySequence(add_note_key), self)
             self.add_note_shortcut.activated.connect(self.add_note)
 
         del_note_key = local_keys.get("delete_note", "F8")
-        if getattr(self, 'del_note_shortcut', None):
+        if getattr(self, "del_note_shortcut", None):
             self.del_note_shortcut.setKey(QKeySequence(del_note_key))
         else:
             self.del_note_shortcut = QShortcut(QKeySequence(del_note_key), self)
@@ -208,7 +155,7 @@ class MainWindow(QMainWindow):
         # Ctrl+, - открыть настройки
         # ПРИМЕЧАНИЕ: используем keyPressEvent для кроссплатформенной поддержки раскладок
         settings_key = local_keys.get("settings", "Ctrl+,")
-        if getattr(self, 'settings_shortcut', None):
+        if getattr(self, "settings_shortcut", None):
             self.settings_shortcut.setKey(QKeySequence(settings_key))
         else:
             self.settings_shortcut = QShortcut(QKeySequence(settings_key), self)
@@ -216,7 +163,7 @@ class MainWindow(QMainWindow):
 
         # Shift+Esc - выход (теперь настраиваемый)
         quit_key = local_keys.get("quit", "Shift+Esc")
-        if getattr(self, 'quit_shortcut', None):
+        if getattr(self, "quit_shortcut", None):
             self.quit_shortcut.setKey(QKeySequence(quit_key))
         else:
             self.quit_shortcut = QShortcut(QKeySequence(quit_key), self)
@@ -228,74 +175,36 @@ class MainWindow(QMainWindow):
         nav_left_key = local_keys.get("navigate_left", "Alt+Left")
         nav_right_key = local_keys.get("navigate_right", "Alt+Right")
 
-        if getattr(self, 'nav_up_shortcut', None):
+        if getattr(self, "nav_up_shortcut", None):
             self.nav_up_shortcut.setKey(QKeySequence(nav_up_key))
         else:
             self.nav_up_shortcut = QShortcut(QKeySequence(nav_up_key), self)
-            self.nav_up_shortcut.activated.connect(lambda: self._navigate_tree_from_editor('up'))
+            self.nav_up_shortcut.activated.connect(lambda: self._navigate_tree_from_editor("up"))
 
-        if getattr(self, 'nav_down_shortcut', None):
+        if getattr(self, "nav_down_shortcut", None):
             self.nav_down_shortcut.setKey(QKeySequence(nav_down_key))
         else:
             self.nav_down_shortcut = QShortcut(QKeySequence(nav_down_key), self)
-            self.nav_down_shortcut.activated.connect(lambda: self._navigate_tree_from_editor('down'))
+            self.nav_down_shortcut.activated.connect(
+                lambda: self._navigate_tree_from_editor("down")
+            )
 
-        if getattr(self, 'nav_left_shortcut', None):
+        if getattr(self, "nav_left_shortcut", None):
             self.nav_left_shortcut.setKey(QKeySequence(nav_left_key))
         else:
             self.nav_left_shortcut = QShortcut(QKeySequence(nav_left_key), self)
-            self.nav_left_shortcut.activated.connect(lambda: self._navigate_tree_from_editor('left'))
+            self.nav_left_shortcut.activated.connect(lambda: self._navigate_tree_from_editor("left"))
 
-        if getattr(self, 'nav_right_shortcut', None):
+        if getattr(self, "nav_right_shortcut", None):
             self.nav_right_shortcut.setKey(QKeySequence(nav_right_key))
         else:
             self.nav_right_shortcut = QShortcut(QKeySequence(nav_right_key), self)
-            self.nav_right_shortcut.activated.connect(lambda: self._navigate_tree_from_editor('right'))
-        
+            self.nav_right_shortcut.activated.connect(
+                lambda: self._navigate_tree_from_editor("right")
+            )
+
         # Alt+S - переключение между последними записями "Текущие" <-> "Буфер обмена"
         # ПРИМЕЧАНИЕ: локальный шорткат удален, логика перенесена в on_global_show_hotkey
-
-    def _set_tree_current_item(self, item: QTreeWidgetItem | None):
-        if item is None:
-            return
-        self.tree_notes.setCurrentItem(item)
-        self.tree_notes.scrollToItem(item)
-
-    def _navigate_tree_from_editor(self, direction: str):
-        """Навигация по дереву, не забирая фокус у редактора."""
-        # Требование: работает только когда фокус в заметке.
-        if not self.editor.hasFocus():
-            return
-
-        current = self.tree_notes.currentItem()
-        if current is None:
-            first = self.tree_notes.topLevelItem(0)
-            self._set_tree_current_item(first)
-            return
-
-        if direction == 'up':
-            self._set_tree_current_item(self.tree_notes.itemAbove(current))
-            return
-
-        if direction == 'down':
-            self._set_tree_current_item(self.tree_notes.itemBelow(current))
-            return
-
-        if direction == 'left':
-            if current.isExpanded():
-                current.setExpanded(False)
-            else:
-                self._set_tree_current_item(current.parent())
-            return
-
-        if direction == 'right':
-            if current.childCount() <= 0:
-                return
-            if not current.isExpanded():
-                current.setExpanded(True)
-            else:
-                self._set_tree_current_item(current.child(0))
-            return
 
     def toggle_focus(self):
         """Переключение фокуса между деревом и редактором"""
@@ -307,22 +216,22 @@ class MainWindow(QMainWindow):
         else:
             self.editor.setFocus()
             self.focused_widget = self.editor
-    
+
     def toggle_current_clipboard_branch(self):
         """Переключение между последними записями в 'Текущие' и 'Буфер обмена'."""
         # Сохраняем текущую заметку перед переключением
         self.save_current_note()
-        
+
         # Определяем текущую ветку
         current_item = self.tree_notes.currentItem()
         current_branch = self._get_root_branch_name(current_item)
-        
+
         # Если текущая ветка "Текущие", переходим в "Буфер обмена" и наоборот
         if current_branch == "Текущие":
             target_branch = "Буфер обмена"
         else:
             target_branch = "Текущие"
-        
+
         # Находим последнюю запись в целевой ветке
         target_root = self.repo.get_note_by_title(target_branch)
         if not target_root:
@@ -333,7 +242,7 @@ class MainWindow(QMainWindow):
         else:
             target_root_id = target_root[0]
             last_note = self.repo.get_last_descendant(target_root_id)
-            
+
             if last_note:
                 last_note_id = last_note[0]
                 # Раскрываем путь к последней записи и выбираем её
@@ -342,55 +251,12 @@ class MainWindow(QMainWindow):
             else:
                 # Если нет записей в целевой ветке, выбираем саму ветку
                 self._select_note_by_id(target_root_id)
-        
+
         # Сохраняем последнюю активную ветку
         self._last_active_branch = target_branch
-        
+
         # Устанавливаем фокус в редактор
         self.editor.setFocus()
-    
-    def _get_root_branch_name(self, item: QTreeWidgetItem | None) -> str:
-        """Получить имя корневой ветки для указанного элемента."""
-        if not item:
-            return "Текущие"  # По умолчанию
-        
-        # Поднимаемся до корневого элемента
-        current = item
-        while current.parent() is not None:
-            current = current.parent()
-        
-        return current.text(0)
-
-    def _find_item_by_id(self, note_id: int):
-        iterator = QTreeWidgetItemIterator(self.tree_notes)
-        while iterator.value():
-            item = iterator.value()
-            if item.data(0, Qt.UserRole) == note_id:
-                return item
-            iterator += 1
-        return None
-
-    def _save_editor_content(self, note_id: int, title: str | None = None):
-        """Сохранение содержимого редактора в указанную заметку.
-
-        Важно: note_id должен соответствовать тому, что сейчас загружено в редактор.
-        """
-        if not note_id:
-            return
-
-        html = self.editor.toHtml()
-        cursor_pos = self.editor.textCursor().position()
-
-        if title is None:
-            # Берем title максимально надежно
-            item = self._find_item_by_id(note_id)
-            if item is not None:
-                title = item.text(0)
-            else:
-                row = self.repo.get_note(note_id)
-                title = row[2] if row else ""
-
-        self.repo.save_note(note_id, title, html, cursor_pos)
 
     def add_note(self):
         """Добавление новой заметки с автоматическим именованием"""
@@ -435,7 +301,7 @@ class MainWindow(QMainWindow):
             # КЛЮЧЕВОЙ МОМЕНТ: запоминаем корневую ветку ПЕРЕД удалением
             current_item = self.tree_notes.currentItem()
             source_branch = self._get_root_branch_name(current_item)
-            
+
             # Если среди удаляемых есть текущая заметка, сперва сохраняем
             if self.current_note_id:
                 for item in selected_items:
@@ -455,7 +321,7 @@ class MainWindow(QMainWindow):
             self.editor.blockSignals(False)
 
             self.load_notes_tree()
-            
+
             # ЛОГИКА ВОЗВРАТА: после перезагрузки дерева возвращаемся в ту же ветку
             # и отправляем Alt+S (через метод toggle_current_clipboard_branch)
             QTimer.singleShot(100, lambda: self._restore_focus_after_delete(source_branch))
@@ -465,14 +331,14 @@ class MainWindow(QMainWindow):
         # Определяем текущую ветку после перезагрузки
         current_item = self.tree_notes.currentItem()
         current_branch = self._get_root_branch_name(current_item)
-        
+
         # Если мы не в исходной ветке, переключаемся туда
         if current_branch != source_branch:
             self.toggle_current_clipboard_branch()
         else:
             # Уже в нужной ветке - просто устанавливаем фокус в редактор
             self.editor.setFocus()
-        
+
         # Теперь выполняем логику Alt+S:
         # Находим последнюю запись в текущей ветке и встаём на неё
         root_note = self.repo.get_note_by_title(source_branch)
@@ -537,36 +403,6 @@ class MainWindow(QMainWindow):
         self.editor.ensureCursorVisible()
 
         self.editor.blockSignals(False)
-
-    def _select_note_by_id(self, note_id):
-        """Выбрать заметку по ID в дереве"""
-        iterator = QTreeWidgetItemIterator(self.tree_notes)
-        while iterator.value():
-            item = iterator.value()
-            if item.data(0, Qt.UserRole) == note_id:
-                self.tree_notes.setCurrentItem(item)
-                break
-            iterator += 1
-
-    def _expand_path_to_note(self, note_id: int):
-        """Раскрыть только те элементы дерева, которые ведут к указанной заметке"""
-        # Получаем путь от корня до заметки
-        path_ids = []
-        current_id = note_id
-        
-        # Строим путь снизу вверх
-        while current_id is not None:
-            note_data = self.repo.get_note(current_id)
-            if not note_data:
-                break
-            path_ids.append(current_id)
-            current_id = note_data[1]  # parent_id
-        
-        # Раскрываем элементы по пути (кроме самой заметки)
-        for path_id in path_ids[1:]:  # Пропускаем саму заметку
-            item = self._find_item_by_id(path_id)
-            if item:
-                item.setExpanded(True)
 
     def load_notes_tree(self):
         """Загрузка дерева заметок из БД"""
@@ -706,28 +542,6 @@ class MainWindow(QMainWindow):
         finally:
             self._is_switching_note = False
 
-    def save_current_note(self):
-        """Сохранение текущей заметки"""
-        if not self.current_note_id:
-            return
-
-        # Сохраняем только если редактор действительно привязан к этой заметке
-        if self.editor.current_note_id != self.current_note_id:
-            return
-
-        item = self.tree_notes.currentItem()
-        title = None
-        if item is not None and item.data(0, Qt.UserRole) == self.current_note_id:
-            title = item.text(0)
-
-        self._save_editor_content(self.current_note_id, title)
-
-    def _on_editor_focus_out(self):
-        """Ключевое событие: редактор теряет фокус."""
-        if self._is_switching_note:
-            return
-        self.save_current_note()
-
     def _restore_last_state(self):
         """Восстановление последней открытой заметки"""
         last_id_str = self.repo.get_state("last_opened_note_id")
@@ -744,9 +558,9 @@ class MainWindow(QMainWindow):
 
         # Если ничего не выбрали, выбираем первую
         if not self.tree_notes.currentItem():
-            iter = QTreeWidgetItemIterator(self.tree_notes)
-            if iter.value():
-                self.tree_notes.setCurrentItem(iter.value())
+            it = QTreeWidgetItemIterator(self.tree_notes)
+            if it.value():
+                self.tree_notes.setCurrentItem(it.value())
 
     def on_global_show_hotkey(self):
         """Обработчик глобального Alt+S: показать окно или переключить ветки"""
@@ -765,11 +579,12 @@ class MainWindow(QMainWindow):
         self.activateWindow()
         # Поднимаем окно выше других
         self.raise_()
-        
+
         # Дополнительная активация через Windows API для надежности
-        if sys.platform == 'win32':
+        if sys.platform == "win32":
             try:
                 import ctypes
+
                 hwnd = int(self.winId())
                 user32 = ctypes.windll.user32
                 # SW_RESTORE = 9 (восстановить окно если свернуто)
@@ -778,7 +593,7 @@ class MainWindow(QMainWindow):
                 user32.SetForegroundWindow(hwnd)
             except Exception as e:
                 print(f"Ошибка при активации окна через Windows API: {e}")
-        
+
         # Фокус на редактор если заметка выбрана
         if self.current_note_id:
             self.editor.setFocus()
@@ -803,13 +618,13 @@ class MainWindow(QMainWindow):
     def keyPressEvent(self, event):
         """Обработка нажатий клавиш"""
         # Ctrl+, независимо от раскладки (Windows)
-        if sys.platform == 'win32':
+        if sys.platform == "win32":
             # VK_OEM_COMMA = 0xBC (физическая клавиша запятой)
             if (event.modifiers() & Qt.ControlModifier) and event.nativeVirtualKey() == 0xBC:
                 self.open_settings()
                 event.accept()
                 return
-        
+
         if event.key() == Qt.Key_Escape:
             self.hide_to_tray()
             event.accept()
