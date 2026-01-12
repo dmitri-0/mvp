@@ -1,4 +1,6 @@
 """Менеджер темы приложения"""
+import os
+from pathlib import Path
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QPalette, QColor
 from PySide6.QtCore import Qt
@@ -6,6 +8,13 @@ from PySide6.QtCore import Qt
 
 class ThemeManager:
     """Управление темой (светлая/темная) для всего приложения"""
+    
+    @staticmethod
+    def get_icon_path(icon_name: str) -> str:
+        """Получить абсолютный путь к иконке"""
+        # Путь относительно текущего файла
+        icon_path = Path(__file__).parent / "icons" / icon_name
+        return str(icon_path.absolute()).replace("\\", "/")
     
     DARK_STYLESHEET = """
     QMainWindow, QDialog, QWidget {
@@ -37,39 +46,13 @@ class ThemeManager:
         background-color: #2a2d2e;
     }
     
-    /* Ветки дерева - светлый фон для видимости стрелок */
-    QTreeWidget::branch {
-        background-color: #252526;
-    }
-    
-    /* Треугольник вправо (закрыто) - CSS треугольник */
+    /* Иконки раскрытия для QTreeWidget в темной теме */
     QTreeWidget::branch:closed:has-children {
-        border: none;
-        background: transparent;
-        margin: 4px;
+        image: url({branch_closed_icon});
     }
     
-    QTreeWidget::branch:closed:has-children:has-siblings {
-        border-left: 6px solid #e0e0e0;
-        border-top: 4px solid transparent;
-        border-bottom: 4px solid transparent;
-        width: 0;
-        height: 0;
-    }
-    
-    /* Треугольник вниз (открыто) - CSS треугольник */
     QTreeWidget::branch:open:has-children {
-        border: none;
-        background: transparent;
-        margin: 4px;
-    }
-    
-    QTreeWidget::branch:open:has-children:has-siblings {
-        border-top: 6px solid #e0e0e0;
-        border-left: 4px solid transparent;
-        border-right: 4px solid transparent;
-        width: 0;
-        height: 0;
+        image: url({branch_open_icon});
     }
     
     QTextEdit {
@@ -339,7 +322,12 @@ class ThemeManager:
         
         if theme_name == "dark":
             ThemeManager._set_dark_palette(app)
-            app.setStyleSheet(ThemeManager.DARK_STYLESHEET)
+            # Подставляем пути к иконкам
+            stylesheet = ThemeManager.DARK_STYLESHEET.format(
+                branch_closed_icon=ThemeManager.get_icon_path("branch-closed.png"),
+                branch_open_icon=ThemeManager.get_icon_path("branch-open.png")
+            )
+            app.setStyleSheet(stylesheet)
         else:
             app.setPalette(app.style().standardPalette())
             app.setStyleSheet(ThemeManager.LIGHT_STYLESHEET)
