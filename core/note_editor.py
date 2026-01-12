@@ -334,3 +334,31 @@ class NoteEditor(QTextEdit):
                 return
 
         super().insertFromMimeData(source)
+    
+    def get_images_in_content(self):
+        """Возвращает список изображений, присутствующих в тексте заметки"""
+        images = []
+        if not self.repo or not self.current_note_id:
+            return images
+
+        # Получаем HTML содержимое
+        html = self.toHtml()
+        
+        # Regex для поиска src="noteimg://..."
+        pattern_noteimg = re.compile(r'src=["\']?noteimg://([0-9\.]+)["\']?')
+        matches_noteimg = pattern_noteimg.findall(html)
+        
+        processed_ids = set()
+        for raw_id in matches_noteimg:
+            if raw_id in processed_ids: continue
+            
+            att_id = self._parse_id_from_name(f"noteimg://{raw_id}")
+            if att_id:
+                processed_ids.add(raw_id)
+                # Получаем данные из репозитория
+                att_data = self.repo.get_attachment(att_id)
+                if att_data:
+                    # att_data = (id, note_id, name, bytes, mime)
+                    images.append(att_data)
+        
+        return images
