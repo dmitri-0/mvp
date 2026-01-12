@@ -1,3 +1,6 @@
+from PySide6.QtCore import Qt
+
+
 class EditorStorageMixin:
     """Mixin: сохранение/восстановление содержимого редактора."""
 
@@ -34,7 +37,7 @@ class EditorStorageMixin:
 
         item = self.tree_notes.currentItem()
         title = None
-        if item is not None and item.data(0, 32) == self.current_note_id:
+        if item is not None and item.data(0, Qt.UserRole) == self.current_note_id:
             title = item.text(0)
 
         self._save_editor_content(self.current_note_id, title)
