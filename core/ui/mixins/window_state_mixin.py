@@ -30,27 +30,35 @@ class WindowStateMixin:
         """Восстановление геометрии окна из config.json"""
         geometry = self.config.get("window_geometry", {})
         
-        width = geometry.get("width", 1000)
-        height = geometry.get("height", 600)
+        # Проверяем, было ли окно развернуто
+        is_maximized = geometry.get("is_maximized", False)
         
-        screen = QGuiApplication.primaryScreen()
-        if screen:
-            avail = screen.availableGeometry()
-            
-            # Корректировка размеров, если выходят за пределы экрана
-            if width > avail.width():
-                width = avail.width()
-            if height > avail.height():
-                height = avail.height()
-                
-            # Центрирование окна
-            x = avail.x() + (avail.width() - width) // 2
-            y = avail.y() + (avail.height() - height) // 2
-            
-            self.resize(width, height)
-            self.move(x, y)
+        if is_maximized:
+            # Если окно было развернуто, восстанавливаем maximized состояние
+            self.showMaximized()
         else:
-            self.resize(width, height)
+            # Иначе восстанавливаем размеры и центрируем
+            width = geometry.get("width", 1000)
+            height = geometry.get("height", 600)
+            
+            screen = QGuiApplication.primaryScreen()
+            if screen:
+                avail = screen.availableGeometry()
+                
+                # Корректировка размеров, если выходят за пределы экрана
+                if width > avail.width():
+                    width = avail.width()
+                if height > avail.height():
+                    height = avail.height()
+                    
+                # Центрирование окна
+                x = avail.x() + (avail.width() - width) // 2
+                y = avail.y() + (avail.height() - height) // 2
+                
+                self.resize(width, height)
+                self.move(x, y)
+            else:
+                self.resize(width, height)
 
     def _save_splitter_state(self, pos=None, index=None):
         """Сохранение позиции сплиттера"""
