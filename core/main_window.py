@@ -151,7 +151,7 @@ class MainWindow(
         # 3. Постраничная навигация
         self._bind_shortcut("nav_page_up_shortcut", local_keys.get("navigate_page_up", "Alt+PgUp"), 
                            lambda: self._navigate_tree_from_editor("page_up"))
-        self._bind_shortcut("nav_page_down_shortcut", local_keys.get("navigate_page_down", "Alt+PgDn"), 
+        self._bind_shortcut("nav_page_down_shortcut", local_keys.get("navigate_page_down", "Alt+PgDown"), 
                            lambda: self._navigate_tree_from_editor("page_down"))
 
     def _bind_shortcut(self, attr_name, key_sequence, callback):

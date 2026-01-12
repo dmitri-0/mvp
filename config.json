@@ -16,17 +16,16 @@
       "navigate_left": "Alt+Left",
       "navigate_right": "Alt+Right",
       "navigate_page_up": "Alt+PgUp",
-      "navigate_page_down": "Alt+PgDn"
+      "navigate_page_down": "Alt+PgDown"
     }
   },
   "window_geometry": {
     "width": 1176,
     "height": 765,
-    "x": 355,
-    "y": 186
+    "is_maximized": false
   },
   "splitter_sizes": [
-    203,
-    968
+    162,
+    1009
   ]
 }
