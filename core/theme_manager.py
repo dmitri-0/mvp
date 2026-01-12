@@ -13,6 +13,14 @@ class ThemeManager:
         color: #d4d4d4;
     }
     
+    /* Исправление заголовка дерева заметок */
+    QHeaderView::section {
+        background-color: #252526;
+        color: #cccccc;
+        border: 1px solid #3e3e42;
+        padding: 4px;
+    }
+    
     QTreeWidget {
         background-color: #252526;
         color: #cccccc;
@@ -205,7 +213,82 @@ class ThemeManager:
     """
     
     LIGHT_STYLESHEET = """
-    /* Светлая тема - используются стандартные стили Qt */
+    QMainWindow, QDialog, QWidget {
+        background-color: #f0f0f0;
+        color: #000000;
+    }
+    
+    QHeaderView::section {
+        background-color: #e1e1e1;
+        color: #000000;
+        border: 1px solid #dcdcdc;
+        padding: 4px;
+    }
+
+    QTreeWidget {
+        background-color: #ffffff;
+        color: #000000;
+        border: 1px solid #c0c0c0;
+        alternate-background-color: #f7f7f7;
+    }
+    
+    QTreeWidget::item:selected {
+        background-color: #0078d7;
+        color: #ffffff;
+    }
+    
+    QTreeWidget::item:hover {
+        background-color: #e5f3ff;
+    }
+    
+    QTextEdit {
+        background-color: #ffffff;
+        color: #000000;
+        border: 1px solid #c0c0c0;
+        selection-background-color: #0078d7;
+        selection-color: #ffffff;
+    }
+    
+    QLineEdit, QSpinBox {
+        background-color: #ffffff;
+        color: #000000;
+        border: 1px solid #c0c0c0;
+        padding: 4px;
+    }
+    
+    QPushButton {
+        background-color: #e1e1e1;
+        color: #000000;
+        border: 1px solid #adadad;
+        padding: 6px 12px;
+        border-radius: 2px;
+    }
+    
+    QPushButton:hover {
+        background-color: #e5f1fb;
+        border: 1px solid #0078d7;
+    }
+    
+    QPushButton:pressed {
+        background-color: #cce4f7;
+    }
+    
+    QStatusBar {
+        background-color: #f0f0f0;
+        color: #000000;
+    }
+    
+    QMessageBox {
+        background-color: #f0f0f0;
+    }
+    
+    QMessageBox QLabel {
+        color: #000000;
+    }
+    
+    QLabel {
+        color: #000000;
+    }
     """
     
     @staticmethod
@@ -219,11 +302,13 @@ class ThemeManager:
         if not app:
             return
         
+        # Сначала сбрасываем стиль, чтобы убедиться, что новый применится полностью
+        app.setStyleSheet("")
+        
         if theme_name == "dark":
             app.setStyleSheet(ThemeManager.DARK_STYLESHEET)
             ThemeManager._set_dark_palette(app)
         else:
-            # Светлая тема - сбрасываем на стандартную
             app.setStyleSheet(ThemeManager.LIGHT_STYLESHEET)
             app.setPalette(app.style().standardPalette())
     
