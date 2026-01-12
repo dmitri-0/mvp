@@ -1,6 +1,6 @@
 from datetime import datetime
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtWidgets import QMessageBox, QInputDialog
 
 
 class NoteActionMixin:
@@ -82,6 +82,87 @@ class NoteActionMixin:
 
         # Немедленно ставим фокус в редактор
         self.editor.setFocus()
+
+    def add_to_favorites(self):
+        """Добавление текущей заметки в Избранное (F5)"""
+        if not self.current_note_id:
+            return
+
+        # Сохраняем текущую заметку перед копированием
+        self.save_current_note()
+
+        # Получаем содержимое текущей заметки
+        row = self.repo.get_note(self.current_note_id)
+        if not row:
+            return
+        
+        _, _, title, body_html, _, _ = row
+
+        # Находим или создаем корневую ветку "Избранное"
+        favorites_root = self.repo.get_note_by_title("Избранное")
+        if not favorites_root:
+            favorites_root_id = self.repo.create_note(None, "Избранное")
+        else:
+            favorites_root_id = favorites_root[0]
+
+        # Создаем заметку в Избранном с тем же заголовком
+        new_note_id = self.repo.create_note(favorites_root_id, title)
+        
+        # Копируем содержимое
+        if body_html:
+            self.repo.save_note(new_note_id, title, body_html)
+
+        # Перезагружаем дерево чтобы показать новую заметку
+        self.load_notes_tree()
+        
+        # Показываем уведомление
+        QMessageBox.information(self, "Избранное", f"Заметка '{title}' добавлена в Избранное")
+
+    def rename_note(self):
+        """Переименование текущей заметки (F2). Корневые заметки не переименовываются."""
+        current_item = self.tree_notes.currentItem()
+        if not current_item:
+            return
+
+        note_id = current_item.data(0, Qt.UserRole)
+        if not note_id:
+            return
+
+        # Получаем данные заметки
+        row = self.repo.get_note(note_id)
+        if not row:
+            return
+        
+        _, parent_id, old_title, _, _, _ = row
+
+        # Проверяем, что это не корневая заметка
+        if parent_id is None:
+            QMessageBox.warning(self, "Переименование", "Корневые ветки нельзя переименовывать")
+            return
+
+        # Диалог для ввода нового имени
+        new_title, ok = QInputDialog.getText(
+            self, 
+            "Переименование заметки", 
+            "Новое название:", 
+            text=old_title
+        )
+
+        if ok and new_title and new_title != old_title:
+            # Сохраняем изменения
+            if note_id == self.current_note_id:
+                # Если это текущая открытая заметка, берем контент из редактора
+                body_html = self.editor.toHtml()
+                cursor_pos = self.editor.textCursor().position()
+                self.repo.save_note(note_id, new_title, body_html, cursor_pos)
+            else:
+                # Иначе просто обновляем title
+                cursor_pos = row[4]
+                body_html = row[3]
+                self.repo.save_note(note_id, new_title, body_html, cursor_pos)
+
+            # Обновляем отображение в дереве
+            current_item.setText(0, new_title)
 
     def delete_notes(self):
         """Удаление выбранных заметок с возвратом фокуса в ту же ветку"""
