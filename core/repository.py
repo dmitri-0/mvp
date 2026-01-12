@@ -81,6 +81,21 @@ class NoteRepository:
     def save_note(self, note_id, title, body_html, cursor_pos=0):
         """Сохранить изменения в заметке"""
         cursor = self.conn.cursor()
+        
+        # Сначала проверяем, изменилось ли что-нибудь
+        cursor.execute("SELECT title, body_html, cursor_position FROM notes WHERE id=?", (note_id,))
+        row = cursor.fetchone()
+        
+        if row:
+            current_title, current_body, current_pos = row
+            # Обработка None значений
+            current_body = current_body or ""
+            current_pos = current_pos or 0
+            
+            # Если ничего не изменилось, просто выходим
+            if current_title == title and current_body == body_html and current_pos == cursor_pos:
+                return
+
         cursor.execute("""
             UPDATE notes SET title=?, body_html=?, cursor_position=?, updated_at=? WHERE id=?
         """, (title, body_html, cursor_pos, datetime.now().isoformat(sep=" "), note_id))
