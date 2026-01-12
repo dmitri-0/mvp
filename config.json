@@ -9,6 +9,7 @@
     "local": {
       "toggle_focus": "F3",
       "add_note": "F4",
+      "move_note": "F6",
       "delete_note": "F8",
       "settings": "Ctrl+,",
       "navigate_up": "Alt+Up",
@@ -20,7 +21,7 @@
     }
   },
   "window_geometry": {
-    "width": 1176,
+    "width": 1253,
     "height": 765,
     "is_maximized": false
   },
