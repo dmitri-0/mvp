@@ -23,15 +23,6 @@ class NoteActionMixin:
                 content_to_copy = self.editor.toHtml()
 
         # 2. Стандартная логика создания (поиск ветки "Текущие" и создание там)
-        # ВАЖНО: По требованию "Находимся ветке Буфер обмена... Нажатие F4 создает новую заметку..."
-        # Обычно add_note создает в "Текущие".
-        # Если мы в Буфере обмена, создаем ли мы заметку в Буфере или в Текущих?
-        # "Нажатие F4 создает новую заметку..."
-        # Логика ниже создает ВСЕГДА в "Текущие" -> "Дата" -> "Время".
-        # Если нужно создавать в текущей ветке (Буфер обмена), нужно менять логику.
-        # Но в ТЗ не сказано менять место создания, сказано "вставляет в нее сразу все содержимое".
-        # Оставим создание в "Текущие" как было, но с контентом.
-        
         current_root = self.repo.get_note_by_title("Текущие")
         if not current_root:
             current_root_id = self.repo.create_note(None, "Текущие")
@@ -51,7 +42,8 @@ class NoteActionMixin:
 
         # 3. Если нужно скопировать контент, обновляем созданную заметку
         if content_to_copy:
-            self.repo.update_note(new_note_id, body=content_to_copy)
+            # Исправление: используем save_note, так как update_note отсутствует в репозитории
+            self.repo.save_note(new_note_id, time_str, content_to_copy)
 
         self.load_notes_tree()
         self._select_note_by_id(new_note_id)
