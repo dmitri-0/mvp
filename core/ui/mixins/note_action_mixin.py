@@ -7,20 +7,53 @@ class NoteActionMixin:
     """Mixin: действия над заметками (добавление, удаление)."""
 
     def add_note(self):
-        """Добавление новой заметки. В ветке 'Буфер обмена' копирует содержимое текущей."""
+        """Добавление новой заметки. 
+        В ветке 'Буфер обмена' копирует содержимое текущей заметки (или всех выделенных).
+        """
         self.save_current_note()
 
-        # 1. Запоминаем контент текущей заметки, если мы в ветке "Буфер обмена"
-        content_to_copy = None
+        content_to_copy = ""
         current_item = self.tree_notes.currentItem()
         
-        # Получаем имя текущей ветки. Метод должен быть доступен в MainWindow (из TreeNavigationMixin)
+        # Получаем список выделенных элементов
+        selected_items = self.tree_notes.selectedItems()
+
+        # Проверяем, находимся ли мы в ветке "Буфер обмена"
+        # Достаточно проверить ветку текущего (фокусного) элемента
         if current_item and hasattr(self, '_get_root_branch_name'):
             branch = self._get_root_branch_name(current_item)
-            if branch == "Буфер обмена" and self.current_note_id:
-                # Берем контент из редактора, т.к. только что сохранили и он актуален
-                # Используем toHtml, чтобы сохранить форматирование
-                content_to_copy = self.editor.toHtml()
+            if branch == "Буфер обмена":
+                # Если выделено несколько заметок -> собираем контент со всех
+                if len(selected_items) > 1:
+                    contents = []
+                    # Сортируем выбранные элементы по порядку в дереве (визуальному), 
+                    # чтобы текст склеивался логично, а не в порядке выделения
+                    # (хотя selectedItems обычно возвращает в порядке выделения или индекса, надежнее отсортировать)
+                    # Но QTreeWidget.selectedItems() не гарантирует порядок. 
+                    # Простейшая сортировка - пока оставим как есть или можно по visualItemRect().y()
+                    
+                    # Лучше пройтись по всем выбранным
+                    for item in selected_items:
+                        note_id = item.data(0, Qt.UserRole)
+                        if note_id:
+                            # Если это текущая открытая заметка - берем из редактора (там свежее)
+                            if note_id == self.current_note_id:
+                                html = self.editor.toHtml()
+                            else:
+                                # Иначе читаем из базы
+                                row = self.repo.get_note(note_id)
+                                html = row[3] if row and row[3] else ""
+                            
+                            if html:
+                                contents.append(html)
+                    
+                    # Объединяем контент. Просто склеиваем HTML.
+                    # Можно добавить разделитель <hr> между заметками
+                    content_to_copy = "<hr>".join(contents)
+
+                # Если выделена только одна (или фокус на одной без selection)
+                elif self.current_note_id:
+                     content_to_copy = self.editor.toHtml()
 
         # 2. Стандартная логика создания (поиск ветки "Текущие" и создание там)
         current_root = self.repo.get_note_by_title("Текущие")
@@ -42,7 +75,6 @@ class NoteActionMixin:
 
         # 3. Если нужно скопировать контент, обновляем созданную заметку
         if content_to_copy:
-            # Исправление: используем save_note, так как update_note отсутствует в репозитории
             self.repo.save_note(new_note_id, time_str, content_to_copy)
 
         self.load_notes_tree()
