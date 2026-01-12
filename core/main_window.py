@@ -1,16 +1,12 @@
-from datetime import datetime
 import sys
 
-from PySide6.QtCore import Qt, QEvent, QUrl, QTimer
+from PySide6.QtCore import Qt, QEvent, QUrl
 from PySide6.QtGui import QTextDocument, QKeySequence, QShortcut, QImage
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
-    QMessageBox,
     QSplitter,
     QTreeWidget,
-    QTreeWidgetItem,
-    QTreeWidgetItemIterator,
 )
 
 from core.clipboard_monitor import ClipboardMonitor
@@ -21,6 +17,9 @@ from core.ui.mixins.editor_storage_mixin import EditorStorageMixin
 from core.ui.mixins.editor_style_mixin import EditorStyleMixin
 from core.ui.mixins.tree_navigation_mixin import TreeNavigationMixin
 from core.ui.mixins.window_state_mixin import WindowStateMixin
+from core.ui.mixins.tree_data_mixin import TreeDataMixin
+from core.ui.mixins.note_action_mixin import NoteActionMixin
+from core.ui.mixins.branch_control_mixin import BranchControlMixin
 from core.ui.settings_dialog import SettingsDialog
 
 
@@ -30,6 +29,9 @@ class MainWindow(
     EditorStyleMixin,
     TreeNavigationMixin,
     EditorStorageMixin,
+    TreeDataMixin,
+    NoteActionMixin,
+    BranchControlMixin,
 ):
     """Главное окно приложения"""
 
@@ -217,257 +219,6 @@ class MainWindow(
             self.editor.setFocus()
             self.focused_widget = self.editor
 
-    def toggle_current_clipboard_branch(self):
-        """Переключение между последними записями в 'Текущие' и 'Буфер обмена'."""
-        # Сохраняем текущую заметку перед переключением
-        self.save_current_note()
-
-        # Определяем текущую ветку
-        current_item = self.tree_notes.currentItem()
-        current_branch = self._get_root_branch_name(current_item)
-
-        # Если текущая ветка "Текущие", переходим в "Буфер обмена" и наоборот
-        if current_branch == "Текущие":
-            target_branch = "Буфер обмена"
-        else:
-            target_branch = "Текущие"
-
-        # Находим последнюю запись в целевой ветке
-        target_root = self.repo.get_note_by_title(target_branch)
-        if not target_root:
-            # Создаем корневую ветку если не существует
-            target_root_id = self.repo.create_note(None, target_branch)
-            self.load_notes_tree()
-            self._select_note_by_id(target_root_id)
-        else:
-            target_root_id = target_root[0]
-            last_note = self.repo.get_last_descendant(target_root_id)
-
-            if last_note:
-                last_note_id = last_note[0]
-                # Раскрываем путь к последней записи и выбираем её
-                self._expand_path_to_note(last_note_id)
-                self._select_note_by_id(last_note_id)
-            else:
-                # Если нет записей в целевой ветке, выбираем саму ветку
-                self._select_note_by_id(target_root_id)
-
-        # Сохраняем последнюю активную ветку
-        self._last_active_branch = target_branch
-
-        # Устанавливаем фокус в редактор
-        self.editor.setFocus()
-
-    def add_note(self):
-        """Добавление новой заметки с автоматическим именованием"""
-        self.save_current_note()
-
-        current_root = self.repo.get_note_by_title("Текущие")
-        if not current_root:
-            current_root_id = self.repo.create_note(None, "Текущие")
-        else:
-            current_root_id = current_root[0]
-
-        date_str = datetime.now().strftime("%y.%m.%d")
-        date_note = self.repo.get_note_by_title(date_str, current_root_id)
-        if not date_note:
-            date_note_id = self.repo.create_note(current_root_id, date_str)
-        else:
-            date_note_id = date_note[0]
-
-        time_str = datetime.now().strftime("%H:%M:%S")
-        new_note_id = self.repo.create_note(date_note_id, time_str)
-
-        self.load_notes_tree()
-        self._select_note_by_id(new_note_id)
-
-        # Немедленно ставим фокус в редактор
-        self.editor.setFocus()
-
-    def delete_notes(self):
-        """Удаление выбранных заметок с возвратом фокуса в ту же ветку"""
-        selected_items = self.tree_notes.selectedItems()
-        if not selected_items:
-            return
-
-        reply = QMessageBox.question(
-            self,
-            "Удаление заметок",
-            f"Удалить {len(selected_items)} заметок?",
-            QMessageBox.Yes | QMessageBox.No,
-        )
-
-        if reply == QMessageBox.Yes:
-            # КЛЮЧЕВОЙ МОМЕНТ: запоминаем корневую ветку ПЕРЕД удалением
-            current_item = self.tree_notes.currentItem()
-            source_branch = self._get_root_branch_name(current_item)
-
-            # Если среди удаляемых есть текущая заметка, сперва сохраняем
-            if self.current_note_id:
-                for item in selected_items:
-                    if item.data(0, Qt.UserRole) == self.current_note_id:
-                        self.save_current_note()
-                        break
-
-            for item in selected_items:
-                note_id = item.data(0, Qt.UserRole)
-                if note_id:
-                    self.repo.delete_note(note_id)
-
-            self.current_note_id = None
-            self.editor.set_current_note_id(None)
-            self.editor.blockSignals(True)
-            self.editor.clear()
-            self.editor.blockSignals(False)
-
-            self.load_notes_tree()
-
-            # ЛОГИКА ВОЗВРАТА: после перезагрузки дерева возвращаемся в ту же ветку
-            # и отправляем Alt+S (через метод toggle_current_clipboard_branch)
-            QTimer.singleShot(100, lambda: self._restore_focus_after_delete(source_branch))
-
-    def _restore_focus_after_delete(self, source_branch: str):
-        """Вспомогательный метод: восстановить фокус и выполнить Alt+S после удаления"""
-        # Определяем текущую ветку после перезагрузки
-        current_item = self.tree_notes.currentItem()
-        current_branch = self._get_root_branch_name(current_item)
-
-        # Если мы не в исходной ветке, переключаемся туда
-        if current_branch != source_branch:
-            self.toggle_current_clipboard_branch()
-        else:
-            # Уже в нужной ветке - просто устанавливаем фокус в редактор
-            self.editor.setFocus()
-
-        # Теперь выполняем логику Alt+S:
-        # Находим последнюю запись в текущей ветке и встаём на неё
-        root_note = self.repo.get_note_by_title(source_branch)
-        if root_note:
-            root_id = root_note[0]
-            last_note = self.repo.get_last_descendant(root_id)
-            if last_note:
-                last_note_id = last_note[0]
-                self._expand_path_to_note(last_note_id)
-                self._select_note_by_id(last_note_id)
-
-    def open_settings(self):
-        """Открытие окна настроек"""
-        dialog = SettingsDialog(self.config, self)
-        if dialog.exec():
-            # Обновляем шорткаты
-            self._setup_shortcuts()
-            # Применение новых настроек
-            self._apply_font()
-            # Перезагрузить текущую заметку чтобы обновился шрифт
-            if self.current_note_id:
-                self._reload_current_note()
-
-    def _reload_current_note(self):
-        """Перезагрузка текущей заметки для применения новых настроек"""
-        if not self.current_note_id:
-            return
-
-        cursor_pos = self.editor.textCursor().position()
-        row = self.repo.get_note(self.current_note_id)
-        if not row:
-            return
-
-        _, _, _, body_html, _, _ = row
-
-        self.editor.blockSignals(True)
-
-        # Важно: зарегистрировать ресурсы ДО setHtml, иначе document/layout
-        # сначала строится с placeholder-иконками (треугольники), а размеры
-        # картинок учитываются только при повторном чтении.
-        attachments = self.repo.get_attachments(self.current_note_id)
-        doc = self.editor.document()
-        for att_id, name, img_bytes, mime in attachments:
-            if img_bytes:
-                image = QImage.fromData(img_bytes)
-                doc.addResource(
-                    QTextDocument.ImageResource,
-                    QUrl(f"noteimg://{att_id}"),
-                    image,
-                )
-
-        self.editor.setHtml(body_html or "")
-
-        # Принудительно применяем шрифт при перезагрузке
-        font_size = self.config.get("font_size", 11)
-        self._force_font_size(font_size)
-
-        # Восстановление курсора
-        cursor = self.editor.textCursor()
-        cursor.setPosition(min(cursor_pos, len(self.editor.toPlainText())))
-        self.editor.setTextCursor(cursor)
-        self.editor.ensureCursorVisible()
-
-        self.editor.blockSignals(False)
-
-    def load_notes_tree(self):
-        """Загрузка дерева заметок из БД"""
-        self._is_reloading_tree = True
-        self.tree_notes.blockSignals(True)
-
-        try:
-            # Сохраняем состояние раскрытия
-            expanded_ids = set()
-            iterator = QTreeWidgetItemIterator(self.tree_notes)
-            while iterator.value():
-                item = iterator.value()
-                if item.isExpanded():
-                    expanded_ids.add(item.data(0, Qt.UserRole))
-                iterator += 1
-
-            current_selected_id = None
-            cur_item = self.tree_notes.currentItem()
-            if cur_item is not None:
-                current_selected_id = cur_item.data(0, Qt.UserRole)
-
-            self.tree_notes.clear()
-            notes = self.repo.get_all_notes()
-
-            # 1) создаем все item'ы
-            items_map: dict[int, QTreeWidgetItem] = {}
-            for note_id, parent_id, title, body_html, cursor_pos, updated_at in notes:
-                item = QTreeWidgetItem([title])
-                item.setData(0, Qt.UserRole, note_id)
-                items_map[note_id] = item
-
-            # 2) собираем иерархию (порядок в БД теперь не важен)
-            root_items = []
-            for note_id, parent_id, title, body_html, cursor_pos, updated_at in notes:
-                item = items_map[note_id]
-                if parent_id is None or parent_id not in items_map:
-                    root_items.append(item)
-                else:
-                    items_map[parent_id].addChild(item)
-
-            self.tree_notes.addTopLevelItems(root_items)
-
-            # Восстанавливаем состояние раскрытия или раскрываем всё если пусто
-            if not expanded_ids:
-                # При первой загрузке дерево свернуто полностью
-                # Раскрытие только до last_opened_note_id произойдет в _restore_last_state
-                pass
-            else:
-                iterator = QTreeWidgetItemIterator(self.tree_notes)
-                while iterator.value():
-                    item = iterator.value()
-                    if item.data(0, Qt.UserRole) in expanded_ids:
-                        item.setExpanded(True)
-                    iterator += 1
-
-            # Восстанавливаем выделение (если было)
-            if current_selected_id:
-                item = items_map.get(current_selected_id)
-                if item is not None:
-                    self.tree_notes.setCurrentItem(item)
-
-        finally:
-            self.tree_notes.blockSignals(False)
-            self._is_reloading_tree = False
-
     def on_note_selected(self, current_item, previous_item):
         """Переключение на другую заметку"""
         if self._is_reloading_tree:
@@ -542,26 +293,6 @@ class MainWindow(
         finally:
             self._is_switching_note = False
 
-    def _restore_last_state(self):
-        """Восстановление последней открытой заметки"""
-        last_id_str = self.repo.get_state("last_opened_note_id")
-        if last_id_str:
-            try:
-                last_id = int(last_id_str)
-                # Раскрываем только путь к этой заметке
-                self._expand_path_to_note(last_id)
-                self._select_note_by_id(last_id)
-                if self.tree_notes.currentItem():
-                    self.tree_notes.setFocus()
-            except ValueError:
-                pass
-
-        # Если ничего не выбрали, выбираем первую
-        if not self.tree_notes.currentItem():
-            it = QTreeWidgetItemIterator(self.tree_notes)
-            if it.value():
-                self.tree_notes.setCurrentItem(it.value())
-
     def on_global_show_hotkey(self):
         """Обработчик глобального Alt+S: показать окно или переключить ветки"""
         if self.isVisible() and self.isActiveWindow():
@@ -630,3 +361,57 @@ class MainWindow(
             event.accept()
         else:
             super().keyPressEvent(event)
+
+    def open_settings(self):
+        """Открытие окна настроек"""
+        dialog = SettingsDialog(self.config, self)
+        if dialog.exec():
+            # Обновляем шорткаты
+            self._setup_shortcuts()
+            # Применение новых настроек
+            self._apply_font()
+            # Перезагрузить текущую заметку чтобы обновился шрифт
+            if self.current_note_id:
+                self._reload_current_note()
+
+    def _reload_current_note(self):
+        """Перезагрузка текущей заметки для применения новых настроек"""
+        if not self.current_note_id:
+            return
+
+        cursor_pos = self.editor.textCursor().position()
+        row = self.repo.get_note(self.current_note_id)
+        if not row:
+            return
+
+        _, _, _, body_html, _, _ = row
+
+        self.editor.blockSignals(True)
+
+        # Важно: зарегистрировать ресурсы ДО setHtml, иначе document/layout
+        # сначала строится с placeholder-иконками (треугольники), а размеры
+        # картинок учитываются только при повторном чтении.
+        attachments = self.repo.get_attachments(self.current_note_id)
+        doc = self.editor.document()
+        for att_id, name, img_bytes, mime in attachments:
+            if img_bytes:
+                image = QImage.fromData(img_bytes)
+                doc.addResource(
+                    QTextDocument.ImageResource,
+                    QUrl(f"noteimg://{att_id}"),
+                    image,
+                )
+
+        self.editor.setHtml(body_html or "")
+
+        # Принудительно применяем шрифт при перезагрузке
+        font_size = self.config.get("font_size", 11)
+        self._force_font_size(font_size)
+
+        # Восстановление курсора
+        cursor = self.editor.textCursor()
+        cursor.setPosition(min(cursor_pos, len(self.editor.toPlainText())))
+        self.editor.setTextCursor(cursor)
+        self.editor.ensureCursorVisible()
+
+        self.editor.blockSignals(False)
