@@ -7,9 +7,31 @@ class NoteActionMixin:
     """Mixin: действия над заметками (добавление, удаление)."""
 
     def add_note(self):
-        """Добавление новой заметки с автоматическим именованием"""
+        """Добавление новой заметки. В ветке 'Буфер обмена' копирует содержимое текущей."""
         self.save_current_note()
 
+        # 1. Запоминаем контент текущей заметки, если мы в ветке "Буфер обмена"
+        content_to_copy = None
+        current_item = self.tree_notes.currentItem()
+        
+        # Получаем имя текущей ветки. Метод должен быть доступен в MainWindow (из TreeNavigationMixin)
+        if current_item and hasattr(self, '_get_root_branch_name'):
+            branch = self._get_root_branch_name(current_item)
+            if branch == "Буфер обмена" and self.current_note_id:
+                # Берем контент из редактора, т.к. только что сохранили и он актуален
+                # Используем toHtml, чтобы сохранить форматирование
+                content_to_copy = self.editor.toHtml()
+
+        # 2. Стандартная логика создания (поиск ветки "Текущие" и создание там)
+        # ВАЖНО: По требованию "Находимся ветке Буфер обмена... Нажатие F4 создает новую заметку..."
+        # Обычно add_note создает в "Текущие".
+        # Если мы в Буфере обмена, создаем ли мы заметку в Буфере или в Текущих?
+        # "Нажатие F4 создает новую заметку..."
+        # Логика ниже создает ВСЕГДА в "Текущие" -> "Дата" -> "Время".
+        # Если нужно создавать в текущей ветке (Буфер обмена), нужно менять логику.
+        # Но в ТЗ не сказано менять место создания, сказано "вставляет в нее сразу все содержимое".
+        # Оставим создание в "Текущие" как было, но с контентом.
+        
         current_root = self.repo.get_note_by_title("Текущие")
         if not current_root:
             current_root_id = self.repo.create_note(None, "Текущие")
@@ -24,7 +46,12 @@ class NoteActionMixin:
             date_note_id = date_note[0]
 
         time_str = datetime.now().strftime("%H:%M:%S")
+        # Создаем пустую заметку
         new_note_id = self.repo.create_note(date_note_id, time_str)
+
+        # 3. Если нужно скопировать контент, обновляем созданную заметку
+        if content_to_copy:
+            self.repo.update_note(new_note_id, body=content_to_copy)
 
         self.load_notes_tree()
         self._select_note_by_id(new_note_id)
