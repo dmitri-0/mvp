@@ -166,6 +166,9 @@ class MainWindow(
         self._bind_shortcut("add_to_favorites_shortcut", local_keys.get("add_to_favorites", "F5"), self.add_to_favorites)
         self._bind_shortcut("rename_note_shortcut", local_keys.get("rename_note", "F2"), self.rename_note)
 
+        # Переключение между ветками (Текущие/Буфер/Избранное)
+        self._bind_shortcut("toggle_branch_shortcut", local_keys.get("toggle_branch", "Alt+S"), self.toggle_current_clipboard_branch)
+
         # 2. Навигация (когда фокус в редакторе)
         self._bind_shortcut("nav_up_shortcut", local_keys.get("navigate_up", "Alt+Up"), 
                            lambda: self._navigate_tree_from_editor("up"))
@@ -298,7 +301,7 @@ class MainWindow(
     def on_global_show_hotkey(self):
         """Обработчик глобального Alt+S: показать окно или переключить ветки"""
         if self.isVisible() and self.isActiveWindow():
-            # Окно уже активно - переключаем между Текущие/Буфер обмена
+            # Окно уже активно - переключаем между Текущие/Буфер обмена/Избранное
             self.toggle_current_clipboard_branch()
         else:
             # Окно скрыто или неактивно - показываем
