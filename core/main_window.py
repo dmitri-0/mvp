@@ -8,7 +8,11 @@ from PySide6.QtWidgets import (
     QSplitter,
     QTreeWidget,
     QStatusBar,
+    QMessageBox,
 )
+import subprocess
+import tempfile
+import os
 
 from core.clipboard_monitor import ClipboardMonitor
 from core.config import Config
@@ -23,6 +27,7 @@ from core.ui.mixins.note_action_mixin import NoteActionMixin
 from core.ui.mixins.branch_control_mixin import BranchControlMixin
 from core.ui.settings_dialog import SettingsDialog
 from core.ui.history_dialog import HistoryDialog
+from core.ui.image_selection_dialog import ImageSelectionDialog
 
 
 class MainWindow(
@@ -127,6 +132,61 @@ class MainWindow(
         dlg = HistoryDialog(self.repo, self, self)
         dlg.exec()
 
+    def edit_image(self):
+        """Редактировать изображение из заметки (F12)"""
+        if not self.current_note_id:
+            QMessageBox.warning(self, "Ошибка", "Заметка не выбрана.")
+            return
+            
+        editor_path = self.config.get("image_editor_path", "")
+        if not editor_path or not os.path.exists(editor_path):
+            QMessageBox.warning(
+                self,
+                "Ошибка",
+                "Путь к редактору изображений не настроен.\n"
+                f"Укажите путь в config.json: image_editor_path"
+            )
+            return
+        
+        # Получаем список изображений
+        images = self.editor.get_images_in_content()
+        
+        if not images:
+            QMessageBox.information(self, "Инфо", "В заметке нет изображений.")
+            return
+        
+        selected_image = None
+        if len(images) == 1:
+            selected_image = images[0]
+        else:
+            # Открываем диалог выбора
+            dlg = ImageSelectionDialog(images, self)
+            if dlg.exec():
+                selected_image = dlg.selected_image
+        
+        if not selected_image:
+            return
+        
+        # selected_image = (id, note_id, name, bytes, mime)
+        att_id, _, name, img_bytes, mime = selected_image
+        
+        # Создаем временный файл
+        ext = name.split('.')[-1] if '.' in name else 'png'
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=f".{ext}")
+        temp_file.write(img_bytes)
+        temp_file.close()
+        
+        try:
+            # Запускаем редактор
+            if sys.platform == 'win32':
+                subprocess.Popen([editor_path, temp_file.name])
+            else:
+                subprocess.Popen([editor_path, temp_file.name])
+            
+            # TODO: Можно добавить отслеживание изменений файла и обновление в базе
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось открыть редактор: {e}")
+
     def set_hotkey_controller(self, controller):
         """Установить контроллер глобальных горячих клавиш"""
         self.hotkey_controller = controller
@@ -171,6 +231,7 @@ class MainWindow(
         # Новые функции
         self._bind_shortcut("add_to_favorites_shortcut", local_keys.get("add_to_favorites", "F5"), self.add_to_favorites)
         self._bind_shortcut("rename_note_shortcut", local_keys.get("rename_note", "F2"), self.rename_note)
+        self._bind_shortcut("edit_image_shortcut", local_keys.get("edit_image", "F12"), self.edit_image)
 
         # Переключение между ветками (Текущие/Буфер/Избранное)
         self._bind_shortcut("toggle_branch_shortcut", local_keys.get("toggle_branch", "Alt+S"), self.toggle_current_clipboard_branch)
