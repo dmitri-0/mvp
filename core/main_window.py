@@ -22,6 +22,7 @@ from core.ui.mixins.tree_data_mixin import TreeDataMixin
 from core.ui.mixins.note_action_mixin import NoteActionMixin
 from core.ui.mixins.branch_control_mixin import BranchControlMixin
 from core.ui.settings_dialog import SettingsDialog
+from core.ui.history_dialog import HistoryDialog
 
 
 class MainWindow(
@@ -121,6 +122,11 @@ class MainWindow(
         # Можно автоматически выбрать новую запись если нужно
         # self._select_note_by_id(note_id)
 
+    def show_history_dialog(self):
+        """Показать окно истории недавно измененных заметок (Alt+D)."""
+        dlg = HistoryDialog(self.repo, self, self)
+        dlg.exec()
+
     def set_hotkey_controller(self, controller):
         """Установить контроллер глобальных горячих клавиш"""
         self.hotkey_controller = controller
@@ -168,6 +174,9 @@ class MainWindow(
 
         # Переключение между ветками (Текущие/Буфер/Избранное)
         self._bind_shortcut("toggle_branch_shortcut", local_keys.get("toggle_branch", "Alt+S"), self.toggle_current_clipboard_branch)
+
+        # История изменений
+        self._bind_shortcut("history_shortcut", local_keys.get("history", "Alt+D"), self.show_history_dialog)
 
         # 2. Навигация (когда фокус в редакторе)
         self._bind_shortcut("nav_up_shortcut", local_keys.get("navigate_up", "Alt+Up"), 
