@@ -1,6 +1,4 @@
 """Менеджер темы приложения"""
-import os
-from pathlib import Path
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QPalette, QColor
 from PySide6.QtCore import Qt
@@ -9,14 +7,7 @@ from PySide6.QtCore import Qt
 class ThemeManager:
     """Управление темой (светлая/темная) для всего приложения"""
     
-    @staticmethod
-    def get_icon_path(icon_name: str) -> str:
-        """Получить абсолютный путь к иконке"""
-        # Путь относительно текущего файла
-        icon_path = Path(__file__).parent / "icons" / icon_name
-        return str(icon_path.absolute()).replace("\\", "/")
-    
-    DARK_STYLESHEET_TEMPLATE = """
+    DARK_STYLESHEET = """
     QMainWindow, QDialog, QWidget {{
         background-color: #1e1e1e;
         color: #d4d4d4;
@@ -46,13 +37,13 @@ class ThemeManager:
         background-color: #2a2d2e;
     }}
     
-    /* Иконки раскрытия для QTreeWidget в темной теме */
+    /* Иконки раскрытия для QTreeWidget в темной теме - встроенные base64 SVG */
     QTreeWidget::branch:closed:has-children {{
-        image: url({branch_closed_icon});
+        image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAQElEQVR4nGNgGAU4wZ07d/4To46JUkPwGkCMIQQNgBmCyyCiDMDnGpIMUFFRYUQXYyFXI9EuwKcZLyA2HQwDAACkMBpd3WfFcAAAAABJRU5ErkJggg==);
     }}
     
     QTreeWidget::branch:open:has-children {{
-        image: url({branch_open_icon});
+        image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAO0lEQVR4nGNgGAUDDxjRBe7cufOfkCYVFRW4PiZ8koQ0YzUAnyHYxLEaQArAaQC6bYS8hhMQE6gjHQAAldkKKyYDX0IAAAAASUVORK5CYII=);
     }}
     
     QTextEdit {{
@@ -231,82 +222,82 @@ class ThemeManager:
     """
     
     LIGHT_STYLESHEET = """
-    QMainWindow, QDialog, QWidget {
+    QMainWindow, QDialog, QWidget {{
         background-color: #f0f0f0;
         color: #000000;
-    }
+    }}
     
-    QHeaderView::section {
+    QHeaderView::section {{
         background-color: #e1e1e1;
         color: #000000;
         border: 1px solid #dcdcdc;
         padding: 4px;
-    }
+    }}
 
-    QTreeWidget {
+    QTreeWidget {{
         background-color: #ffffff;
         color: #000000;
         border: 1px solid #c0c0c0;
         alternate-background-color: #f7f7f7;
-    }
+    }}
     
-    QTreeWidget::item:selected {
+    QTreeWidget::item:selected {{
         background-color: #0078d7;
         color: #ffffff;
-    }
+    }}
     
-    QTreeWidget::item:hover {
+    QTreeWidget::item:hover {{
         background-color: #e5f3ff;
-    }
+    }}
     
-    QTextEdit {
+    QTextEdit {{
         background-color: #ffffff;
         color: #000000;
         border: 1px solid #c0c0c0;
         selection-background-color: #0078d7;
         selection-color: #ffffff;
-    }
+    }}
     
-    QLineEdit, QSpinBox {
+    QLineEdit, QSpinBox {{
         background-color: #ffffff;
         color: #000000;
         border: 1px solid #c0c0c0;
         padding: 4px;
-    }
+    }}
     
-    QPushButton {
+    QPushButton {{
         background-color: #e1e1e1;
         color: #000000;
         border: 1px solid #adadad;
         padding: 6px 12px;
         border-radius: 2px;
-    }
+    }}
     
-    QPushButton:hover {
+    QPushButton:hover {{
         background-color: #e5f1fb;
         border: 1px solid #0078d7;
-    }
+    }}
     
-    QPushButton:pressed {
+    QPushButton:pressed {{
         background-color: #cce4f7;
-    }
+    }}
     
-    QStatusBar {
+    QStatusBar {{
         background-color: #f0f0f0;
         color: #000000;
-    }
+    }}
     
-    QMessageBox {
+    QMessageBox {{
         background-color: #f0f0f0;
-    }
+    }}
     
-    QMessageBox QLabel {
+    QMessageBox QLabel {{
         color: #000000;
-    }
+    }}
     
-    QLabel {
+    QLabel {{
         color: #000000;
-    }
+    }}
     """
     
     @staticmethod
@@ -322,12 +313,7 @@ class ThemeManager:
         
         if theme_name == "dark":
             ThemeManager._set_dark_palette(app)
-            # Подставляем пути к иконкам используя format с экранированными скобками
-            stylesheet = ThemeManager.DARK_STYLESHEET_TEMPLATE.format(
-                branch_closed_icon=ThemeManager.get_icon_path("branch-closed.png"),
-                branch_open_icon=ThemeManager.get_icon_path("branch-open.png")
-            )
-            app.setStyleSheet(stylesheet)
+            app.setStyleSheet(ThemeManager.DARK_STYLESHEET)
         else:
             app.setPalette(app.style().standardPalette())
             app.setStyleSheet(ThemeManager.LIGHT_STYLESHEET)
