@@ -1,7 +1,7 @@
 {
   "database_path": "notes.db",
-  "font_family": "Consolas",
-  "font_size": 14,
+  "font_family": "JetBrains Mono",
+  "font_size": 13,
   "hotkeys": {
     "global": {
       "show_window": "<alt>+s"
@@ -16,5 +16,15 @@
       "navigate_left": "Alt+Left",
       "navigate_right": "Alt+Right"
     }
-  }
+  },
+  "window_geometry": {
+    "width": 1176,
+    "height": 765,
+    "x": 355,
+    "y": 186
+  },
+  "splitter_sizes": [
+    203,
+    968
+  ]
 }
