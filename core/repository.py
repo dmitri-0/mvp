@@ -172,3 +172,36 @@ class NoteRepository:
             row = cursor.fetchone()
             
         return row
+
+    def is_clipboard_note(self, note_id):
+        """
+        Проверить, принадлежит ли заметка ветке 'Буфер обмена'.
+        Идет вверх по родителям до корня, проверяя title.
+        """
+        if not note_id:
+            return False
+            
+        cursor = self.conn.cursor()
+        current_id = note_id
+        
+        # Максимум 10 уровней вглубь для защиты от циклов
+        for _ in range(10):
+            cursor.execute("SELECT id, parent_id, title FROM notes WHERE id=?", (current_id,))
+            row = cursor.fetchone()
+            
+            if not row:
+                return False
+                
+            nid, parent_id, title = row
+            
+            # Если нашли корневой узел "Буфер обмена"
+            if title == "Буфер обмена" and parent_id is None:
+                return True
+            
+            # Если дошли до корня дерева, но это не "Буфер обмена"
+            if parent_id is None:
+                return False
+                
+            current_id = parent_id
+            
+        return False
