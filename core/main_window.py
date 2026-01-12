@@ -196,6 +196,10 @@ class MainWindow(
         self.config.set("theme", new_theme)
         ThemeManager.apply_theme(new_theme)
 
+    def toggle_view_mode(self):
+        """Переключение режима просмотра (обычный текст / markdown) по F3"""
+        self.editor.toggle_view_mode()
+
     def set_hotkey_controller(self, controller):
         """Установить контроллер глобальных горячих клавиш"""
         self.hotkey_controller = controller
@@ -226,7 +230,7 @@ class MainWindow(
             local_keys = hotkeys
 
         # 1. Основные команды
-        self._bind_shortcut("toggle_focus_shortcut", local_keys.get("toggle_focus", "F3"), self.toggle_focus)
+        self._bind_shortcut("toggle_view_mode_shortcut", local_keys.get("toggle_view_mode", "F3"), self.toggle_view_mode)
         self._bind_shortcut("add_note_shortcut", local_keys.get("add_note", "F4"), self.add_note)
         self._bind_shortcut("del_note_shortcut", local_keys.get("delete_note", "F8"), self.delete_notes)
         self._bind_shortcut("settings_shortcut", local_keys.get("settings", "Ctrl+,"), self.open_settings)
