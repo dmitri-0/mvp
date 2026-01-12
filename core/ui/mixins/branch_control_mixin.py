@@ -65,5 +65,8 @@ class BranchControlMixin:
         # Сохраняем последнюю активную ветку
         self._last_active_branch = target_branch
 
+        # Схлопываем все ветки кроме текущей
+        self._collapse_all_except_current()
+
         # Устанавливаем фокус в редактор
         self.editor.setFocus()
