@@ -296,8 +296,7 @@ class MainWindow(
             self.save_current_note()
             self.tree_notes.setFocus()
             self.focused_widget = self.tree_notes
-            # Схлопываем все ветки кроме текущей при переходе к дереву
-            self._collapse_all_except_current()
+            # Убрано схлопывание веток по запросу
         else:
             self.editor.setFocus()
             self.focused_widget = self.editor
