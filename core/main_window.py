@@ -277,9 +277,8 @@ class MainWindow(
 
             self.editor.setHtml(body_html or "")
 
-            # Применяем шрифт ко всему содержимому при открытии
-            font_size = self.config.get("font_size", 11)
-            self._force_font_size(font_size)
+            # Применяем глобальный шрифт
+            self._enforce_global_font()
 
             # Восстановление курсора
             if cursor_pos is not None:
@@ -404,9 +403,8 @@ class MainWindow(
 
         self.editor.setHtml(body_html or "")
 
-        # Принудительно применяем шрифт при перезагрузке
-        font_size = self.config.get("font_size", 11)
-        self._force_font_size(font_size)
+        # Принудительно применяем глобальный шрифт при перезагрузке
+        self._enforce_global_font()
 
         # Восстановление курсора
         cursor = self.editor.textCursor()
