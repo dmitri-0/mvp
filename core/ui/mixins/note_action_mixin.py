@@ -70,6 +70,12 @@ class NoteActionMixin:
 
             self.load_notes_tree()
 
+            # Автоматическое сжатие базы после удаления (тихо, без сообщений)
+            try:
+                self.repo.vacuum()
+            except Exception as e:
+                print(f"Error compacting db: {e}")
+
             # ЛОГИКА ВОЗВРАТА: после перезагрузки дерева возвращаемся в ту же ветку
             # и отправляем Alt+S (через метод toggle_current_clipboard_branch)
             QTimer.singleShot(100, lambda: self._restore_focus_after_delete(source_branch))
