@@ -1,5 +1,16 @@
 from datetime import datetime
-from PySide6.QtWidgets import QDialog, QVBoxLayout, QListWidget, QListWidgetItem, QStatusBar
+from PySide6.QtWidgets import (
+    QDialog,
+    QVBoxLayout,
+    QListWidget,
+    QListWidgetItem,
+    QStatusBar,
+    QPushButton,
+    QHBoxLayout,
+    QLabel,
+    QWidget,
+    QStyle
+)
 from PySide6.QtCore import Qt
 
 class HistoryDialog(QDialog):
@@ -13,7 +24,32 @@ class HistoryDialog(QDialog):
         self.resize(600, 400)
         
         layout = QVBoxLayout(self)
+        # Убираем внешние отступы, но заголовок сделаем с отступами
         layout.setContentsMargins(0, 0, 0, 0)
+        
+        # --- Header with Clear button ---
+        header_widget = QWidget()
+        header_layout = QHBoxLayout(header_widget)
+        header_layout.setContentsMargins(10, 5, 10, 5) # Небольшие отступы для заголовка
+        
+        # Добавляем заголовок слева (опционально, для баланса)
+        title_label = QLabel("Последние изменения")
+        title_label.setStyleSheet("color: gray; font-size: 11px;")
+        header_layout.addWidget(title_label)
+
+        header_layout.addStretch()
+        
+        self.clear_btn = QPushButton()
+        self.clear_btn.setIcon(self.style().standardIcon(QStyle.SP_TrashIcon))
+        self.clear_btn.setToolTip("Очистить историю")
+        self.clear_btn.setFlat(True) # Делаем кнопку плоской (мини-кнопка)
+        self.clear_btn.setFixedSize(24, 24)
+        self.clear_btn.clicked.connect(self.clear_history)
+        
+        header_layout.addWidget(self.clear_btn)
+        
+        layout.addWidget(header_widget)
+        # -------------------------------
         
         self.list_widget = QListWidget()
         self.list_widget.currentItemChanged.connect(self._on_item_changed)
@@ -49,6 +85,11 @@ class HistoryDialog(QDialog):
             
         if self.list_widget.count() > 0:
             self.list_widget.setCurrentRow(0)
+    
+    def clear_history(self):
+        """Очистить историю"""
+        self.repo.clear_history()
+        self.load_history() # Перезагрузить список (будет пустым)
             
     def _on_item_changed(self, current, previous):
         if not current:
