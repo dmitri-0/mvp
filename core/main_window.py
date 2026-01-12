@@ -1,6 +1,6 @@
 from datetime import datetime
 import sys
-from PySide6.QtCore import Qt, QEvent, QUrl
+from PySide6.QtCore import Qt, QEvent, QUrl, QTimer
 from PySide6.QtGui import QFont, QTextDocument, QKeySequence, QShortcut, QImage, QTextCursor, QTextCharFormat
 from PySide6.QtWidgets import (
     QMainWindow, QTreeWidget, QTreeWidgetItem, QTreeWidgetItemIterator, QSplitter,
@@ -504,7 +504,7 @@ class MainWindow(QMainWindow):
         self.editor.setFocus()
 
     def delete_notes(self):
-        """Удаление выбранных заметок"""
+        """Удаление выбранных заметок с возвратом фокуса в ту же ветку"""
         selected_items = self.tree_notes.selectedItems()
         if not selected_items:
             return
@@ -517,6 +517,10 @@ class MainWindow(QMainWindow):
         )
 
         if reply == QMessageBox.Yes:
+            # КЛЮЧЕВОЙ МОМЕНТ: запоминаем корневую ветку ПЕРЕД удалением
+            current_item = self.tree_notes.currentItem()
+            source_branch = self._get_root_branch_name(current_item)
+            
             # Если среди удаляемых есть текущая заметка, сперва сохраняем
             if self.current_note_id:
                 for item in selected_items:
@@ -536,6 +540,34 @@ class MainWindow(QMainWindow):
             self.editor.blockSignals(False)
 
             self.load_notes_tree()
+            
+            # ЛОГИКА ВОЗВРАТА: после перезагрузки дерева возвращаемся в ту же ветку
+            # и отправляем Alt+S (через метод toggle_current_clipboard_branch)
+            QTimer.singleShot(100, lambda: self._restore_focus_after_delete(source_branch))
+
+    def _restore_focus_after_delete(self, source_branch: str):
+        """Вспомогательный метод: восстановить фокус и выполнить Alt+S после удаления"""
+        # Определяем текущую ветку после перезагрузки
+        current_item = self.tree_notes.currentItem()
+        current_branch = self._get_root_branch_name(current_item)
+        
+        # Если мы не в исходной ветке, переключаемся туда
+        if current_branch != source_branch:
+            self.toggle_current_clipboard_branch()
+        else:
+            # Уже в нужной ветке - просто устанавливаем фокус в редактор
+            self.editor.setFocus()
+        
+        # Теперь выполняем логику Alt+S:
+        # Находим последнюю запись в текущей ветке и встаём на неё
+        root_note = self.repo.get_note_by_title(source_branch)
+        if root_note:
+            root_id = root_note[0]
+            last_note = self.repo.get_last_descendant(root_id)
+            if last_note:
+                last_note_id = last_note[0]
+                self._expand_path_to_note(last_note_id)
+                self._select_note_by_id(last_note_id)
 
     def open_settings(self):
         """Открытие окна настроек"""
