@@ -147,3 +147,28 @@ class NoteRepository:
     def vacuum(self):
         """Сжатие базы данных (освобождение места на диске)"""
         self.conn.execute("VACUUM")
+
+    def get_last_descendant(self, root_id):
+        """
+        Найти последнюю (по ID) заметку, которая находится в поддереве указанного корня.
+        Предполагается структура Root -> Date -> Time (3 уровня), но ищем просто max(id) среди потомков 2-го уровня.
+        """
+        cursor = self.conn.cursor()
+        # Ищем среди внуков (детей детей корня)
+        query = """
+            SELECT n.id, n.parent_id, n.title, n.body_html 
+            FROM notes n 
+            JOIN notes p ON n.parent_id = p.id 
+            WHERE p.parent_id = ? 
+            ORDER BY n.id DESC 
+            LIMIT 1
+        """
+        cursor.execute(query, (root_id,))
+        row = cursor.fetchone()
+        
+        # Если внуков нет, ищем среди детей
+        if not row:
+            cursor.execute("SELECT id, parent_id, title, body_html FROM notes WHERE parent_id=? ORDER BY id DESC LIMIT 1", (root_id,))
+            row = cursor.fetchone()
+            
+        return row
