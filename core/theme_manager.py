@@ -317,3 +317,30 @@ class ThemeManager:
             widget.setStyle(app.style())
             widget.update()
             widget.repaint()
+    
+    @staticmethod
+    def _set_dark_palette(app):
+        """Установить темную палитру для приложения"""
+        dark_palette = QPalette()
+        
+        # Основные цвета
+        dark_palette.setColor(QPalette.Window, QColor(30, 30, 30))
+        dark_palette.setColor(QPalette.WindowText, QColor(212, 212, 212))
+        dark_palette.setColor(QPalette.Base, QColor(30, 30, 30))
+        dark_palette.setColor(QPalette.AlternateBase, QColor(45, 45, 48))
+        dark_palette.setColor(QPalette.ToolTipBase, QColor(212, 212, 212))
+        dark_palette.setColor(QPalette.ToolTipText, QColor(212, 212, 212))
+        dark_palette.setColor(QPalette.Text, QColor(212, 212, 212))
+        dark_palette.setColor(QPalette.Button, QColor(60, 60, 60))
+        dark_palette.setColor(QPalette.ButtonText, QColor(212, 212, 212))
+        dark_palette.setColor(QPalette.BrightText, Qt.red)
+        dark_palette.setColor(QPalette.Link, QColor(0, 122, 204))
+        dark_palette.setColor(QPalette.Highlight, QColor(9, 71, 113))
+        dark_palette.setColor(QPalette.HighlightedText, QColor(255, 255, 255))
+        
+        # Неактивные цвета
+        dark_palette.setColor(QPalette.Disabled, QPalette.Text, QColor(127, 127, 127))
+        dark_palette.setColor(QPalette.Disabled, QPalette.ButtonText, QColor(127, 127, 127))
+        dark_palette.setColor(QPalette.Disabled, QPalette.WindowText, QColor(127, 127, 127))
+        
+        app.setPalette(dark_palette)
