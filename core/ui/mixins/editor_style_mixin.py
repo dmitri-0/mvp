@@ -15,9 +15,11 @@ class EditorStyleMixin:
         # Обновление стиля документа для мгновенного применения
         doc = self.editor.document()
         doc.setDefaultFont(font)
-        self.editor.setStyleSheet(
-            f"QTextEdit {{ font-family: '{font_family}'; font-size: {font_size}pt; }}"
-        )
+        
+        # Убираем inline-стили, чтобы тема применялась корректно
+        # self.editor.setStyleSheet(
+        #     f"QTextEdit {{ font-family: '{font_family}'; font-size: {font_size}pt; }}"
+        # )
 
         # Принудительное обновление шрифта во всем документе
         self._enforce_global_font()
