@@ -19,11 +19,14 @@ class EditorStyleMixin:
             f"QTextEdit {{ font-family: '{font_family}'; font-size: {font_size}pt; }}"
         )
 
-        # Принудительное обновление размера шрифта во всем документе (без сброса других стилей)
-        self._force_font_size(font_size)
+        # Принудительное обновление шрифта во всем документе
+        self._enforce_global_font()
 
-    def _force_font_size(self, size):
-        """Принудительно установить размер шрифта для всего содержимого"""
+    def _enforce_global_font(self):
+        """Принудительно установить глобальный шрифт и размер для всего содержимого"""
+        font_family = self.config.get("font_family", "Consolas")
+        font_size = self.config.get("font_size", 11)
+
         cursor = self.editor.textCursor()
         if not cursor:
             return
@@ -34,12 +37,14 @@ class EditorStyleMixin:
         # Выделяем все
         cursor.select(QTextCursor.Document)
 
-        # Применяем только размер шрифта
+        # Применяем шрифт и размер
         fmt = QTextCharFormat()
-        fmt.setFontPointSize(size)
+        fmt.setFontFamily(font_family)
+        fmt.setFontPointSize(font_size)
         cursor.mergeCharFormat(fmt)
 
         # Восстанавливаем позицию БЕЗ выделения
         cursor.clearSelection()
-        cursor.setPosition(min(pos, len(self.editor.toPlainText())))
+        doc_len = len(self.editor.toPlainText())
+        cursor.setPosition(min(pos, doc_len))
         self.editor.setTextCursor(cursor)
