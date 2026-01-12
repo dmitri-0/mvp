@@ -202,9 +202,10 @@ class MainWindow(
         if not self.current_note_id:
             return
         
-        html_content = self.editor.toHtml()
-        dlg = MarkdownViewDialog(html_content, self)
-        dlg.show() # Используем show вместо exec для немодального окна если нужно
+        # Берем чистый текст из редактора (Markdown исходник)
+        plain_text = self.editor.toPlainText()
+        dlg = MarkdownViewDialog(plain_text, self)
+        dlg.show() # Используем show вместо exec для немодального окна
 
     def set_hotkey_controller(self, controller):
         """Установить контроллер глобальных горячих клавиш"""
@@ -502,7 +503,7 @@ class MainWindow(
 
         self.editor.setHtml(body_html or "")
 
-        # Принудительно применяем глобальный шрифт при перезагрузке
+        # Применяем глобальный шрифт
         self._enforce_global_font()
 
         # Восстановление курсора
