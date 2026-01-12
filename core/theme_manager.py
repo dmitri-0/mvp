@@ -1,4 +1,6 @@
 """Менеджер темы приложения"""
+import os
+from pathlib import Path
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QPalette, QColor
 from PySide6.QtCore import Qt
@@ -7,7 +9,14 @@ from PySide6.QtCore import Qt
 class ThemeManager:
     """Управление темой (светлая/темная) для всего приложения"""
     
-    DARK_STYLESHEET = """
+    @staticmethod
+    def get_icon_path(icon_name: str) -> str:
+        """Получить абсолютный путь к иконке"""
+        # Путь относительно текущего файла
+        icon_path = Path(__file__).parent / "icons" / icon_name
+        return str(icon_path.absolute()).replace("\\", "/")
+    
+    DARK_STYLESHEET_TEMPLATE = """
     QMainWindow, QDialog, QWidget {{
         background-color: #1e1e1e;
         color: #d4d4d4;
@@ -37,13 +46,13 @@ class ThemeManager:
         background-color: #2a2d2e;
     }}
     
-    /* Иконки раскрытия для QTreeWidget в темной теме - встроенные base64 SVG */
+    /* Иконки раскрытия для QTreeWidget в темной теме */
     QTreeWidget::branch:closed:has-children {{
-        image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAQElEQVR4nGNgGAU4wZ07d/4To46JUkPwGkCMIQQNgBmCyyCiDMDnGpIMUFFRYUQXYyFXI9EuwKcZLyA2HQwDAACkMBpd3WfFcAAAAABJRU5ErkJggg==);
+        image: url({branch_closed_icon});
     }}
     
     QTreeWidget::branch:open:has-children {{
-        image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAO0lEQVR4nGNgGAUDDxjRBe7cufOfkCYVFRW4PiZ8koQ0YzUAnyHYxLEaQArAaQC6bYS8hhMQE6gjHQAAldkKKyYDX0IAAAAASUVORK5CYII=);
+        image: url({branch_open_icon});
     }}
     
     QTextEdit {{
@@ -313,7 +322,12 @@ class ThemeManager:
         
         if theme_name == "dark":
             ThemeManager._set_dark_palette(app)
-            app.setStyleSheet(ThemeManager.DARK_STYLESHEET)
+            # Подставляем пути к иконкам используя format с экранированными скобками
+            stylesheet = ThemeManager.DARK_STYLESHEET_TEMPLATE.format(
+                branch_closed_icon=ThemeManager.get_icon_path("branch-closed.png"),
+                branch_open_icon=ThemeManager.get_icon_path("branch-open.png")
+            )
+            app.setStyleSheet(stylesheet)
         else:
             app.setPalette(app.style().standardPalette())
             app.setStyleSheet(ThemeManager.LIGHT_STYLESHEET)
