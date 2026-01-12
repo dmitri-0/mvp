@@ -46,22 +46,19 @@ class ThemeManager:
         background-color: #2a2d2e;
     }}
     
-    /* Иконки раскрытия для QTreeWidget в темной теме */
-    /* Сначала сбрасываем border-image для всех веток, чтобы убрать стандартные стрелки */
+    /* Стилизация веток дерева */
     QTreeWidget::branch {{
-        border-image: none;
-        image: none;
-        background-color: #252526;
+        background: transparent;
     }}
     
-    /* Затем явно задаем иконки для закрытых веток с детьми */
+    /* Закрытая ветка (стрелка вправо) */
     QTreeWidget::branch:has-children:!has-siblings:closed,
     QTreeWidget::branch:closed:has-children:has-siblings {{
         border-image: none;
         image: url({branch_closed_icon});
     }}
     
-    /* И для открытых веток с детьми */
+    /* Открытая ветка (стрелка вниз) */
     QTreeWidget::branch:open:has-children:!has-siblings,
     QTreeWidget::branch:open:has-children:has-siblings {{
         border-image: none;
@@ -169,7 +166,7 @@ class ThemeManager:
         height: 0px;
     }}
     
-    QScrollBar::horizontal {{
+    QScrollBar:horizontal {{
         background-color: #1e1e1e;
         height: 14px;
         border: none;
