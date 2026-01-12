@@ -3,8 +3,7 @@ from PySide6.QtGui import QFont, QTextDocument
 import markdown
 import re
 
-PREVIEW_VERSION = "2026-01-12.2216"
-
+PREVIEW_VERSION = "2026-01-12.2223"
 
 class MarkdownViewDialog(QDialog):
     """Окно для просмотра (превью) Markdown, отрендеренного в HTML"""
@@ -21,8 +20,6 @@ class MarkdownViewDialog(QDialog):
 
         html_body, css = self._render_markdown(plain_text)
 
-        # QTextEdit/QTextBrowser в Qt не всегда применяет <style> из HTML.
-        # Надежнее установить CSS через QTextDocument.setDefaultStyleSheet.
         doc = QTextDocument(self.viewer)
         doc.setDefaultStyleSheet(css)
         doc.setDefaultFont(QFont("Segoe UI", 12))
@@ -34,10 +31,20 @@ class MarkdownViewDialog(QDialog):
     def _render_markdown(self, text: str) -> tuple[str, str]:
         """Рендеринг Markdown в HTML и возврат CSS отдельной строкой."""
 
-        # 1) Strike: в python-markdown нет ~~text~~ из коробки.
-        text = re.sub(r"~~(.*?)~~", r"<del>\\1</del>", text)
+        # 1) Strike: исправил регулярку (убрал лишние экранирования) и тег на <s> (более надежен в Qt)
+        # Было: r"<del>\\1</del>" -> Стало: r"<s>\1</s>"
+        text = re.sub(r"~~(.*?)~~", r"<s>\1</s>", text)
 
-        # 2) HTML
+        # 2) Чекбоксы:
+        # [x] -> ☑ (BALLOT BOX WITH CHECK)
+        # [ ] -> ☐ (BALLOT BOX)
+        # Делаем это ДО markdown рендера, чтобы списки не сломались, но нужно аккуратно.
+        # Лучше всего заменить именно паттерн в начале строки списка или внутри текста.
+        
+        text = text.replace("[x]", "☑")
+        text = text.replace("[ ]", "☐")
+
+        # 3) HTML
         html = markdown.markdown(
             text,
             extensions=[
@@ -48,7 +55,7 @@ class MarkdownViewDialog(QDialog):
             ],
         )
 
-        # 3) Принудительно ставим inline-стиль в заголовки (на случай ограничений Qt)
+        # 4) Принудительно ставим inline-стиль в заголовки
         header_styles = {
             "h1": "font-size: 36px; font-weight: 600;",
             "h2": "font-size: 30px; font-weight: 600;",
@@ -58,20 +65,19 @@ class MarkdownViewDialog(QDialog):
             "h6": "font-size: 18px; font-weight: 600;",
         }
         for tag, style in header_styles.items():
-            # <h3> or <h3 ...>
             html = re.sub(
-                rf"<{tag}(\\s[^>]*)?>",
+                rf"<{tag}(\s[^>]*)?>",
                 lambda m: f"<{tag}{m.group(1) or ''} style=\"{style}\">",
                 html,
             )
 
-        # 4) Баннер версии, чтобы сразу видеть что код обновился
         banner = (
             f"<div style='color:#888; font-size:12px; margin-bottom:10px;'>"
-            f"Preview engine: {PREVIEW_VERSION}"  # диагностическая строка
+            f"Preview engine: {PREVIEW_VERSION}"
             f"</div>"
         )
 
+        # CSS: добавил s { text-decoration: line-through }
         css = """
             body { background-color: #2b2b2b; color: #ddd; font-family: 'Segoe UI', sans-serif; font-size: 18px; line-height: 1.6; }
             p, ul, ol, li, table, th, td, blockquote { font-size: 18px; }
@@ -92,9 +98,8 @@ class MarkdownViewDialog(QDialog):
             ul, ol { margin-left: 22px; padding-left: 22px; }
             li { margin-bottom: 5px; }
 
-            del { text-decoration: line-through; color: #888; }
+            del, s { text-decoration: line-through; color: #888; }
             a { color: #5dade2; text-decoration: none; }
         """
 
-        # Важно: возвращаем HTML без <style>, потому что CSS задаем через doc.setDefaultStyleSheet
         return banner + html, css
