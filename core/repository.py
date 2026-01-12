@@ -143,3 +143,7 @@ class NoteRepository:
         cursor.execute("SELECT value FROM state WHERE key=?", (key,))
         row = cursor.fetchone()
         return row[0] if row else default
+
+    def vacuum(self):
+        """Сжатие базы данных (освобождение места на диске)"""
+        self.conn.execute("VACUUM")
