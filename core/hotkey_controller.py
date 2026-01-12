@@ -37,7 +37,7 @@ class HotkeyController:
         self.window = window
         self.config = config
         self.signals = HotkeySignals()
-        self.signals.show_signal.connect(window.show_and_focus)
+        self.signals.show_signal.connect(window.on_global_show_hotkey)
         self.signals.hide_signal.connect(window.hide_to_tray)
         self.signals.quit_signal.connect(window.quit_app)
         
