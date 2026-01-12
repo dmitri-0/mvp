@@ -8,7 +8,7 @@ class MarkdownViewDialog(QDialog):
     def __init__(self, plain_text, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Markdown Preview")
-        self.resize(1200, 800)  # Увеличен размер окна
+        self.resize(1200, 800)
         
         layout = QVBoxLayout(self)
         
@@ -24,57 +24,79 @@ class MarkdownViewDialog(QDialog):
     def _render_markdown(self, text: str) -> str:
         """Рендеринг Markdown в HTML с поддержкой таблиц и кода"""
         try:
-            # Подключаем расширения: таблицы, блоки кода
-            # 'sane_lists' помогает с корректной вложенностью списков
             extensions = [
                 'markdown.extensions.tables',
                 'markdown.extensions.fenced_code',
                 'markdown.extensions.nl2br',
                 'markdown.extensions.sane_lists', 
-                'pymdownx.strike',  # Для зачеркнутого текста (требует pymdown-extensions)
+                'pymdownx.strike',
                 'markdown.extensions.abbr'
             ]
             
-            # Если pymdownx недоступен, пробуем встроенный del (если есть в новых версиях) или простой регексп
-            # Но лучше использовать стандартный подход через tilde. 
-            # Стандартный python-markdown не поддерживает ~~text~~ из коробки без сторонних расширений.
-            # Попробуем простейший хак для зачеркивания перед рендерингом, если расширения нет.
-            
-            # Проверка на наличие расширения pymdownx (обычно нужно ставить отдельно)
-            # Если нет, используем простую замену
             try:
                 html = markdown.markdown(text, extensions=['pymdownx.strike'])
             except ImportError:
-                # Простая замена ~~text~~ на <del>text</del>
                 import re
                 text = re.sub(r'~~(.*?)~~', r'<del>\1</del>', text)
                 html = markdown.markdown(text, extensions=extensions[:4])
             else:
-                 # Если импорт прошел (в блоке try был просто тест), рендерим с полным набором (если установлено)
-                 # Но так как мы не знаем окружения, лучше использовать безопасный список
                  html = markdown.markdown(text, extensions=extensions[:4])
 
-            
-            # Добавляем CSS
-            # font-size: 14pt для основного текста
-            # margin-left для вложенных списков
+            # CSS
+            # Qt's HTML engine is limited (HTML4/CSS2.1 subset).
+            # It often ignores body font-size inheritance in lists/tables.
+            # We must explicitly set font-size for specific tags.
             style = """
             <style>
-                body { font-family: sans-serif; font-size: 14pt; line-height: 1.6; }
-                h1, h2, h3 { color: #ddd; margin-top: 1.5em; }
-                table { border-collapse: collapse; width: 100%; margin-bottom: 1em; font-size: 13pt; }
-                th, td { border: 1px solid #555; padding: 8px; }
-                th { background-color: #333; color: #fff; font-weight: bold; }
-                code { background-color: #333; padding: 2px 5px; border-radius: 3px; font-family: 'Consolas', 'Courier New', monospace; font-size: 13pt; }
-                pre { background-color: #2b2b2b; padding: 15px; border-radius: 5px; overflow-x: auto; margin: 1em 0; }
-                pre code { background-color: transparent; padding: 0; }
-                blockquote { border-left: 4px solid #555; padding-left: 1em; color: #bbb; margin-left: 0; }
+                body { 
+                    font-family: sans-serif; 
+                    font-size: 14pt; 
+                    line-height: 1.6; 
+                    color: #ddd;
+                    background-color: #2b2b2b;
+                }
                 
-                /* Списки */
+                /* Explicit inheritance fix for Qt */
+                p, ul, ol, li, dl, dt, dd, table, th, td, blockquote {
+                    font-size: 14pt;
+                }
+                
+                h1 { font-size: 24pt; color: #fff; margin-top: 1em; }
+                h2 { font-size: 20pt; color: #eee; margin-top: 1em; }
+                h3 { font-size: 18pt; color: #ddd; margin-top: 1em; }
+                
+                table { border-collapse: collapse; width: 100%; margin-bottom: 1em; }
+                th, td { border: 1px solid #555; padding: 8px; }
+                th { background-color: #444; color: #fff; font-weight: bold; }
+                
+                /* Code blocks */
+                code { 
+                    background-color: #444; 
+                    padding: 2px 5px; 
+                    border-radius: 3px; 
+                    font-family: 'Consolas', 'Courier New', monospace; 
+                    font-size: 14pt; /* Explicitly match body size */
+                }
+                pre { 
+                    background-color: #333; 
+                    padding: 15px; 
+                    border-radius: 5px; 
+                    margin: 1em 0; 
+                    font-size: 14pt; /* Ensure block code is also big */
+                }
+                
+                blockquote { 
+                    border-left: 4px solid #777; 
+                    padding-left: 1em; 
+                    color: #aaa; 
+                    margin-left: 0; 
+                }
+                
                 ul, ol { margin-left: 20px; padding-left: 20px; }
                 li { margin-bottom: 0.5em; }
                 
                 del { text-decoration: line-through; color: #888; }
+                a { color: #5dade2; text-decoration: none; }
             </style>
             """
             return style + html
