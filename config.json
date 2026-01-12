@@ -13,6 +13,7 @@
       "move_note": "F6",
       "delete_note": "F8",
       "rename_note": "F2",
+      "edit_image": "F12",
       "history": "Alt+D",
       "settings": "Ctrl+,",
       "navigate_up": "Alt+Up",
@@ -32,5 +33,6 @@
   "splitter_sizes": [
     216,
     1032
-  ]
+  ],
+  "image_editor_path": "c:\\ROOT\\TCPU73\\Programm\\FastStoneCapture\\FSCapture.exe"
 }
