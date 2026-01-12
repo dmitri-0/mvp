@@ -138,6 +138,9 @@ class MainWindow(
         self._bind_shortcut("settings_shortcut", local_keys.get("settings", "Ctrl+,"), self.open_settings)
         self._bind_shortcut("quit_shortcut", local_keys.get("quit", "Shift+Esc"), self.quit_app)
 
+        # Копирование содержимого заметки
+        self._bind_shortcut("copy_note_shortcut", local_keys.get("copy_note", "Ctrl+C"), self.copy_current_note_to_clipboard)
+
         # 2. Навигация (когда фокус в редакторе)
         self._bind_shortcut("nav_up_shortcut", local_keys.get("navigate_up", "Alt+Up"), 
                            lambda: self._navigate_tree_from_editor("up"))
@@ -174,6 +177,21 @@ class MainWindow(
         else:
             self.editor.setFocus()
             self.focused_widget = self.editor
+
+    def copy_current_note_to_clipboard(self):
+        """Копирование текста текущей заметки в буфер обмена"""
+        # Если фокус в редакторе и есть выделение - стандартное поведение копирования
+        if self.editor.hasFocus() and self.editor.textCursor().hasSelection():
+            self.editor.copy()
+            return
+
+        # Иначе (фокус в дереве или в редакторе без выделения) копируем все содержимое
+        if self.current_note_id:
+            # Используем текст из редактора, так как он самый актуальный
+            # Если нужно HTML, можно toHtml(). Но в буфер обычно удобнее plain text.
+            # Либо можно положить и то и то через QMimeData, но setText проще.
+            text = self.editor.toPlainText()
+            QApplication.clipboard().setText(text)
 
     def on_note_selected(self, current_item, previous_item):
         """Переключение на другую заметку"""
