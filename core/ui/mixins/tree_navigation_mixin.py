@@ -151,7 +151,10 @@ class TreeNavigationMixin:
             item = item.parent()
         
         # Раскрываем элементы пути (от корня к текущей заметке)
-        for path_item in reversed(path_items[:-1]):  # Исключаем саму заметку
+        # path_items содержит [current, parent, ..., root]
+        # path_items[1:] содержит [parent, ..., root]
+        # reversed(path_items[1:]) содержит [root, ..., parent] - порядок раскрытия сверху вниз
+        for path_item in reversed(path_items[1:]): 
             path_item.setExpanded(True)
     
     def _collapse_recursive(self, item: QTreeWidgetItem):
