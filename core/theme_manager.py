@@ -15,302 +15,145 @@ class ThemeManager:
         icon_path = Path(__file__).parent / "icons" / icon_name
         return str(icon_path.absolute()).replace("\\", "/")
     
-    # CSS с использованием встроенных иконок
-    DARK_STYLESHEET_TEMPLATE = """
-    QMainWindow, QDialog, QWidget {{
-        background-color: #1e1e1e;
-        color: #d4d4d4;
-    }}
-    
-    /* Исправление заголовка дерева заметок */
-    QHeaderView::section {{
-        background-color: #252526;
-        color: #cccccc;
-        border: 1px solid #3e3e42;
-        padding: 4px;
-    }}
-    
-    QTreeWidget {{
-        background-color: #252526;
-        color: #cccccc;
-        border: 1px solid #3e3e42;
-        alternate-background-color: #2d2d30;
-        /* Убираем пунктирные линии фокуса */
-        outline: 0;
-    }}
-    
-    QTreeWidget::item:selected {{
-        background-color: #094771;
-        color: #ffffff;
-    }}
-    
-    QTreeWidget::item:hover {{
-        background-color: #2a2d2e;
-    }}
-    
-    /* ВАЖНО: Fusion стиль требует явного указания иконки, но без сложной логики border-image */
-    QTreeWidget::branch:has-children:!has-siblings:closed,
-    QTreeWidget::branch:closed:has-children:has-siblings {{
-        image: url({branch_closed_icon});
-    }}
-    
-    QTreeWidget::branch:open:has-children:!has-siblings,
-    QTreeWidget::branch:open:has-children:has-siblings {{
-        image: url({branch_open_icon});
-    }}
-    
-    QTextEdit {{
-        background-color: #1e1e1e;
-        color: #d4d4d4;
-        border: 1px solid #3e3e42;
-        selection-background-color: #264f78;
-        selection-color: #ffffff;
-    }}
-    
-    QLineEdit, QSpinBox {{
-        background-color: #3c3c3c;
-        color: #cccccc;
-        border: 1px solid #3e3e42;
-        padding: 4px;
-    }}
-    
-    QLineEdit:focus, QSpinBox:focus {{
-        border: 1px solid #007acc;
-    }}
-    
-    QPushButton {{
-        background-color: #0e639c;
-        color: #ffffff;
-        border: none;
-        padding: 6px 12px;
-        border-radius: 2px;
-    }}
-    
-    QPushButton:hover {{
-        background-color: #1177bb;
-    }}
-    
-    QPushButton:pressed {{
-        background-color: #094771;
-    }}
-    
-    QPushButton:disabled {{
-        background-color: #3e3e42;
-        color: #656565;
-    }}
-    
-    QComboBox {{
-        background-color: #3c3c3c;
-        color: #cccccc;
-        border: 1px solid #3e3e42;
-        padding: 4px;
-    }}
-    
-    QComboBox:hover {{
-        border: 1px solid #007acc;
-    }}
-    
-    QComboBox::drop-down {{
-        border: none;
-        width: 20px;
-    }}
-    
-    QComboBox::down-arrow {{
-        image: none;
-        border-left: 4px solid transparent;
-        border-right: 4px solid transparent;
-        border-top: 6px solid #cccccc;
-        margin-right: 6px;
-    }}
-    
-    QComboBox QAbstractItemView {{
-        background-color: #252526;
-        color: #cccccc;
-        selection-background-color: #094771;
-        border: 1px solid #3e3e42;
-    }}
-    
-    QLabel {{
-        color: #cccccc;
-    }}
-    
-    QStatusBar {{
-        background-color: #007acc;
-        color: #ffffff;
-    }}
-    
-    QScrollBar:vertical {{
+    # CSS для темной темы
+    # Мы убрали стилизацию основных виджетов (QTreeWidget, QTextEdit и т.д.),
+    # чтобы стиль Fusion использовал QPalette. Это гарантирует правильные
+    # стандартные иконки (стрелки дерева) и цвета.
+    # Оставляем только то, что палитра не может настроить (скроллбары, сплиттеры).
+    DARK_STYLESHEET = """
+    QScrollBar:vertical {
         background-color: #1e1e1e;
         width: 14px;
         border: none;
-    }}
+    }
     
-    QScrollBar::handle:vertical {{
+    QScrollBar::handle:vertical {
         background-color: #424242;
         min-height: 20px;
         border-radius: 4px;
         margin: 2px;
-    }}
+    }
     
-    QScrollBar::handle:vertical:hover {{
+    QScrollBar::handle:vertical:hover {
         background-color: #4e4e4e;
-    }}
+    }
     
-    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
         height: 0px;
-    }}
+    }
     
-    QScrollBar::horizontal {{
+    QScrollBar::horizontal {
         background-color: #1e1e1e;
         height: 14px;
         border: none;
-    }}
+    }
     
-    QScrollBar::handle:horizontal {{
+    QScrollBar::handle:horizontal {
         background-color: #424242;
         min-width: 20px;
         border-radius: 4px;
         margin: 2px;
-    }}
+    }
     
-    QScrollBar::handle:horizontal:hover {{
+    QScrollBar::handle:horizontal:hover {
         background-color: #4e4e4e;
-    }}
+    }
     
-    QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+    QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
         width: 0px;
-    }}
+    }
     
-    QSplitter::handle {{
+    QSplitter::handle {
         background-color: #3e3e42;
-    }}
+    }
     
-    QSplitter::handle:hover {{
+    QSplitter::handle:hover {
         background-color: #007acc;
-    }}
+    }
     
-    QMessageBox {{
-        background-color: #1e1e1e;
-    }}
-    
-    QMessageBox QLabel {{
-        color: #d4d4d4;
-    }}
-    
-    QInputDialog {{
-        background-color: #252526;
-    }}
-    
-    QMenu {{
-        background-color: #252526;
-        color: #cccccc;
-        border: 1px solid #3e3e42;
-    }}
-    
-    QMenu::item:selected {{
-        background-color: #094771;
-    }}
-    
-    QTabWidget::pane {{
-        border: 1px solid #3e3e42;
-        background-color: #1e1e1e;
-    }}
-    
-    QTabBar::tab {{
-        background-color: #2d2d30;
-        color: #cccccc;
-        padding: 6px 12px;
-        border: 1px solid #3e3e42;
-        border-bottom: none;
-    }}
-    
-    QTabBar::tab:selected {{
-        background-color: #1e1e1e;
+    QStatusBar {
+        background-color: #007acc;
         color: #ffffff;
-    }}
-    
-    QTabBar::tab:hover {{
-        background-color: #2a2d2e;
-    }}
+    }
     """
     
     LIGHT_STYLESHEET = """
-    QMainWindow, QDialog, QWidget {{
+    QMainWindow, QDialog, QWidget {
         background-color: #f0f0f0;
         color: #000000;
-    }}
+    }
     
-    QHeaderView::section {{
+    QHeaderView::section {
         background-color: #e1e1e1;
         color: #000000;
         border: 1px solid #dcdcdc;
         padding: 4px;
-    }}
+    }
 
-    QTreeWidget {{
+    QTreeWidget {
         background-color: #ffffff;
         color: #000000;
         border: 1px solid #c0c0c0;
         alternate-background-color: #f7f7f7;
-    }}
+    }
     
-    QTreeWidget::item:selected {{
+    QTreeWidget::item:selected {
         background-color: #0078d7;
         color: #ffffff;
-    }}
+    }
     
-    QTreeWidget::item:hover {{
+    QTreeWidget::item:hover {
         background-color: #e5f3ff;
-    }}
+    }
     
-    QTextEdit {{
+    QTextEdit {
         background-color: #ffffff;
         color: #000000;
         border: 1px solid #c0c0c0;
         selection-background-color: #0078d7;
         selection-color: #ffffff;
-    }}
+    }
     
-    QLineEdit, QSpinBox {{
+    QLineEdit, QSpinBox {
         background-color: #ffffff;
         color: #000000;
         border: 1px solid #c0c0c0;
         padding: 4px;
-    }}
+    }
     
-    QPushButton {{
+    QPushButton {
         background-color: #e1e1e1;
         color: #000000;
         border: 1px solid #adadad;
         padding: 6px 12px;
         border-radius: 2px;
-    }}
+    }
     
-    QPushButton:hover {{
+    QPushButton:hover {
         background-color: #e5f1fb;
         border: 1px solid #0078d7;
-    }}
+    }
     
-    QPushButton:pressed {{
+    QPushButton:pressed {
         background-color: #cce4f7;
-    }}
+    }
     
-    QStatusBar {{
+    QStatusBar {
         background-color: #f0f0f0;
         color: #000000;
-    }}
+    }
     
-    QMessageBox {{
+    QMessageBox {
         background-color: #f0f0f0;
-    }}
+    }
     
-    QMessageBox QLabel {{
+    QMessageBox QLabel {
         color: #000000;
-    }}
+    }
     
-    QLabel {{
+    QLabel {
         color: #000000;
-    }}
+    }
     """
     
     @staticmethod
@@ -329,18 +172,8 @@ class ThemeManager:
             app.setStyle(QStyleFactory.create("Fusion"))
             ThemeManager._set_dark_palette(app)
             
-            # Более яркие белые иконки для темной темы (вместо светло-серых)
-            # Закрытая ветка (стрелка вправо ">") - белая
-            closed_icon = "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNNiAzTDExIDhMNiAxM1oiIGZpbGw9IiNmZmZmZmYiLz48L3N2Zz4="
-            
-            # Открытая ветка (стрелка вниз "v") - белая
-            open_icon = "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNMyA2TDggMTFMMTMgNloiIGZpbGw9IiNmZmZmZmYiLz48L3N2Zz4="
-            
-            stylesheet = ThemeManager.DARK_STYLESHEET_TEMPLATE.format(
-                branch_closed_icon=closed_icon,
-                branch_open_icon=open_icon
-            )
-            app.setStyleSheet(stylesheet)
+            # Применяем минималистичный стиль, полагаясь на палитру
+            app.setStyleSheet(ThemeManager.DARK_STYLESHEET)
         else:
             # Возвращаем стандартный стиль (обычно WindowsVista на Win10/11)
             # Если "windowsvista" недоступен, Qt сам выберет дефолт
