@@ -55,6 +55,7 @@ class MainWindow(
         self.editor = NoteEditor()
         self.editor.setAcceptRichText(True)
         self.editor.set_context(self.repo)
+        self.editor.set_main_window(self)  # Устанавливаем ссылку на главное окно
         self.editor.focusOut.connect(self._on_editor_focus_out)
 
         # Применение шрифта
