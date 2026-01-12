@@ -141,6 +141,10 @@ class MainWindow(
         # Копирование содержимого заметки
         self._bind_shortcut("copy_note_shortcut", local_keys.get("copy_note", "Ctrl+C"), self.copy_current_note_to_clipboard)
 
+        # Новые функции
+        self._bind_shortcut("add_to_favorites_shortcut", local_keys.get("add_to_favorites", "F5"), self.add_to_favorites)
+        self._bind_shortcut("rename_note_shortcut", local_keys.get("rename_note", "F2"), self.rename_note)
+
         # 2. Навигация (когда фокус в редакторе)
         self._bind_shortcut("nav_up_shortcut", local_keys.get("navigate_up", "Alt+Up"), 
                            lambda: self._navigate_tree_from_editor("up"))
