@@ -291,14 +291,30 @@ class NoteRepository:
         path_parts.reverse()
         return " / ".join(path_parts) if path_parts else None
 
+    def clear_history(self):
+        """Очистить историю изменений (установить отсечку времени)"""
+        self.set_state("history_cleared_at", datetime.now().isoformat(sep=" "))
+
     def get_recently_updated_notes(self, limit=50):
         """Получить список недавно измененных заметок (id, title, updated_at)"""
         cursor = self.conn.cursor()
-        cursor.execute("""
+        
+        # Получаем метку времени очистки истории
+        cleared_at = self.get_state("history_cleared_at")
+        
+        query = """
             SELECT id, title, updated_at 
             FROM notes 
             WHERE title IS NOT NULL
-            ORDER BY updated_at DESC 
-            LIMIT ?
-        """, (limit,))
+        """
+        params = []
+        
+        if cleared_at:
+            query += " AND updated_at > ?"
+            params.append(cleared_at)
+            
+        query += " ORDER BY updated_at DESC LIMIT ?"
+        params.append(limit)
+        
+        cursor.execute(query, tuple(params))
         return cursor.fetchall()
