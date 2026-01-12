@@ -20,7 +20,7 @@ class SettingsDialog(QDialog):
         self.config = config
         self.setWindowTitle("Настройки")
         self.setModal(True)
-        self.resize(400, 200)
+        self.resize(400, 250)
 
         layout = QFormLayout()
 
@@ -55,12 +55,27 @@ class SettingsDialog(QDialog):
         btn_cancel = QPushButton("Отмена")
         btn_cancel.clicked.connect(self.reject)
 
+        # Кнопка сжатия базы
+        btn_vacuum = QPushButton("Сжать базу данных")
+        btn_vacuum.clicked.connect(self.compact_db)
+
         btn_layout = QVBoxLayout()
+        btn_layout.addWidget(btn_vacuum)
         btn_layout.addWidget(btn_save)
         btn_layout.addWidget(btn_cancel)
 
         layout.addRow("", btn_layout)
         self.setLayout(layout)
+
+    def compact_db(self):
+        """Вызов сжатия базы"""
+        try:
+            # Получаем репозиторий через родительское окно (MainWindow)
+            repo = self.parent().repo
+            repo.vacuum()
+            QMessageBox.information(self, "Успех", "База данных успешно сжата.")
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Ошибка при сжатии базы данных: {e}")
 
     def save_settings(self):
         """Сохранение настроек"""
