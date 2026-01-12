@@ -7,6 +7,7 @@ from core.repository import NoteRepository
 from core.tray_controller import TrayController
 from core.hotkey_controller import HotkeyController
 from core.config import Config
+from core.theme_manager import ThemeManager
 
 
 def main():
@@ -15,6 +16,10 @@ def main():
     
     # Загрузка конфигурации
     config = Config("config.json")
+    
+    # Применение темы при запуске
+    theme = config.get("theme", "light")
+    ThemeManager.apply_theme(theme)
     
     # Инициализация репозитория
     repo = NoteRepository(config.get("database_path", "notes.db"))

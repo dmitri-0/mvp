@@ -18,6 +18,7 @@ from core.clipboard_monitor import ClipboardMonitor
 from core.config import Config
 from core.note_editor import NoteEditor
 from core.repository import NoteRepository
+from core.theme_manager import ThemeManager
 from core.ui.mixins.editor_storage_mixin import EditorStorageMixin
 from core.ui.mixins.editor_style_mixin import EditorStyleMixin
 from core.ui.mixins.tree_navigation_mixin import TreeNavigationMixin
@@ -187,6 +188,14 @@ class MainWindow(
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Не удалось открыть редактор: {e}")
 
+    def toggle_theme(self):
+        """Переключение между светлой и темной темой (F10)"""
+        current_theme = self.config.get("theme", "light")
+        new_theme = "dark" if current_theme == "light" else "light"
+        
+        self.config.set("theme", new_theme)
+        ThemeManager.apply_theme(new_theme)
+
     def set_hotkey_controller(self, controller):
         """Установить контроллер глобальных горячих клавиш"""
         self.hotkey_controller = controller
@@ -238,6 +247,9 @@ class MainWindow(
 
         # История изменений
         self._bind_shortcut("history_shortcut", local_keys.get("history", "Alt+D"), self.show_history_dialog)
+
+        # Переключение темы
+        self._bind_shortcut("toggle_theme_shortcut", local_keys.get("toggle_theme", "F10"), self.toggle_theme)
 
         # 2. Навигация (когда фокус в редакторе)
         self._bind_shortcut("nav_up_shortcut", local_keys.get("navigate_up", "Alt+Up"), 
