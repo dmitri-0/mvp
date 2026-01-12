@@ -2,6 +2,7 @@
   "database_path": "notes.db",
   "font_family": "JetBrains Mono",
   "font_size": 13,
+  "theme": "dark",
   "hotkeys": {
     "global": {
       "show_window": "<alt>+s"
@@ -22,7 +23,8 @@
       "navigate_right": "Alt+Right",
       "navigate_page_up": "Alt+PgUp",
       "navigate_page_down": "Alt+PgDown",
-      "toggle_branch": "Alt+S"
+      "toggle_branch": "Alt+S",
+      "toggle_theme": "F10"
     }
   },
   "window_geometry": {
