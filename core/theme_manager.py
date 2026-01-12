@@ -329,9 +329,12 @@ class ThemeManager:
             app.setStyle(QStyleFactory.create("Fusion"))
             ThemeManager._set_dark_palette(app)
             
-            # Base64 иконки (светло-серые для темной темы)
-            closed_icon = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAQElEQVR4nGNgGAU4wZ07d/4To46JUkPwGkCMIQQNgBmCyyCiDMDnGpIMUFFRYUQXYyFXI9EuwKcZLyA2HQwDAACkMBpd3WfFcAAAAABJRU5ErkJggg=="
-            open_icon = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAO0lEQVR4nGNgGAUDDxjRBe7cufOfkCYVFRW4PiZ8koQ0YzUAnyHYxLEaQArAaQC6bYS8hhMQE6gjHQAAldkKKyYDX0IAAAAASUVORK5CYII="
+            # Более яркие белые иконки для темной темы (вместо светло-серых)
+            # Закрытая ветка (стрелка вправо ">") - белая
+            closed_icon = "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNNiAzTDExIDhMNiAxM1oiIGZpbGw9IiNmZmZmZmYiLz48L3N2Zz4="
+            
+            # Открытая ветка (стрелка вниз "v") - белая
+            open_icon = "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNMyA2TDggMTFMMTMgNloiIGZpbGw9IiNmZmZmZmYiLz48L3N2Zz4="
             
             stylesheet = ThemeManager.DARK_STYLESHEET_TEMPLATE.format(
                 branch_closed_icon=closed_icon,
