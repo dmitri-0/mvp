@@ -131,102 +131,38 @@ class MainWindow(
             # Fallback для старых конфигов или если миграция не прошла
             local_keys = hotkeys
 
-        focus_key = local_keys.get("toggle_focus", "F3")
+        # 1. Основные команды
+        self._bind_shortcut("toggle_focus_shortcut", local_keys.get("toggle_focus", "F3"), self.toggle_focus)
+        self._bind_shortcut("add_note_shortcut", local_keys.get("add_note", "F4"), self.add_note)
+        self._bind_shortcut("del_note_shortcut", local_keys.get("delete_note", "F8"), self.delete_notes)
+        self._bind_shortcut("settings_shortcut", local_keys.get("settings", "Ctrl+,"), self.open_settings)
+        self._bind_shortcut("quit_shortcut", local_keys.get("quit", "Shift+Esc"), self.quit_app)
 
-        # Обновляем или создаем шорткат
-        if self.toggle_focus_shortcut:
-            self.toggle_focus_shortcut.setKey(QKeySequence(focus_key))
+        # 2. Навигация (когда фокус в редакторе)
+        self._bind_shortcut("nav_up_shortcut", local_keys.get("navigate_up", "Alt+Up"), 
+                           lambda: self._navigate_tree_from_editor("up"))
+        self._bind_shortcut("nav_down_shortcut", local_keys.get("navigate_down", "Alt+Down"), 
+                           lambda: self._navigate_tree_from_editor("down"))
+        self._bind_shortcut("nav_left_shortcut", local_keys.get("navigate_left", "Alt+Left"), 
+                           lambda: self._navigate_tree_from_editor("left"))
+        self._bind_shortcut("nav_right_shortcut", local_keys.get("navigate_right", "Alt+Right"), 
+                           lambda: self._navigate_tree_from_editor("right"))
+        
+        # 3. Постраничная навигация
+        self._bind_shortcut("nav_page_up_shortcut", local_keys.get("navigate_page_up", "Alt+PgUp"), 
+                           lambda: self._navigate_tree_from_editor("page_up"))
+        self._bind_shortcut("nav_page_down_shortcut", local_keys.get("navigate_page_down", "Alt+PgDn"), 
+                           lambda: self._navigate_tree_from_editor("page_down"))
+
+    def _bind_shortcut(self, attr_name, key_sequence, callback):
+        """Вспомогательный метод для привязки шортката к атрибуту окна"""
+        shortcut = getattr(self, attr_name, None)
+        if shortcut:
+            shortcut.setKey(QKeySequence(key_sequence))
         else:
-            self.toggle_focus_shortcut = QShortcut(QKeySequence(focus_key), self)
-            self.toggle_focus_shortcut.activated.connect(self.toggle_focus)
-
-        # F4 - добавить заметку
-        add_note_key = local_keys.get("add_note", "F4")
-        if getattr(self, "add_note_shortcut", None):
-            self.add_note_shortcut.setKey(QKeySequence(add_note_key))
-        else:
-            self.add_note_shortcut = QShortcut(QKeySequence(add_note_key), self)
-            self.add_note_shortcut.activated.connect(self.add_note)
-
-        del_note_key = local_keys.get("delete_note", "F8")
-        if getattr(self, "del_note_shortcut", None):
-            self.del_note_shortcut.setKey(QKeySequence(del_note_key))
-        else:
-            self.del_note_shortcut = QShortcut(QKeySequence(del_note_key), self)
-            self.del_note_shortcut.activated.connect(self.delete_notes)
-
-        # Ctrl+, - открыть настройки
-        # ПРИМЕЧАНИЕ: используем keyPressEvent для кроссплатформенной поддержки раскладок
-        settings_key = local_keys.get("settings", "Ctrl+,")
-        if getattr(self, "settings_shortcut", None):
-            self.settings_shortcut.setKey(QKeySequence(settings_key))
-        else:
-            self.settings_shortcut = QShortcut(QKeySequence(settings_key), self)
-            self.settings_shortcut.activated.connect(self.open_settings)
-
-        # Shift+Esc - выход (теперь настраиваемый)
-        quit_key = local_keys.get("quit", "Shift+Esc")
-        if getattr(self, "quit_shortcut", None):
-            self.quit_shortcut.setKey(QKeySequence(quit_key))
-        else:
-            self.quit_shortcut = QShortcut(QKeySequence(quit_key), self)
-            self.quit_shortcut.activated.connect(self.quit_app)
-
-        # Навигация по дереву, когда фокус в редакторе (Alt+стрелки по умолчанию)
-        nav_up_key = local_keys.get("navigate_up", "Alt+Up")
-        nav_down_key = local_keys.get("navigate_down", "Alt+Down")
-        nav_left_key = local_keys.get("navigate_left", "Alt+Left")
-        nav_right_key = local_keys.get("navigate_right", "Alt+Right")
-        nav_page_up_key = local_keys.get("navigate_page_up", "Alt+PgUp")
-        nav_page_down_key = local_keys.get("navigate_page_down", "Alt+PgDn")
-
-        if getattr(self, "nav_up_shortcut", None):
-            self.nav_up_shortcut.setKey(QKeySequence(nav_up_key))
-        else:
-            self.nav_up_shortcut = QShortcut(QKeySequence(nav_up_key), self)
-            self.nav_up_shortcut.activated.connect(lambda: self._navigate_tree_from_editor("up"))
-
-        if getattr(self, "nav_down_shortcut", None):
-            self.nav_down_shortcut.setKey(QKeySequence(nav_down_key))
-        else:
-            self.nav_down_shortcut = QShortcut(QKeySequence(nav_down_key), self)
-            self.nav_down_shortcut.activated.connect(
-                lambda: self._navigate_tree_from_editor("down")
-            )
-
-        if getattr(self, "nav_left_shortcut", None):
-            self.nav_left_shortcut.setKey(QKeySequence(nav_left_key))
-        else:
-            self.nav_left_shortcut = QShortcut(QKeySequence(nav_left_key), self)
-            self.nav_left_shortcut.activated.connect(lambda: self._navigate_tree_from_editor("left"))
-
-        if getattr(self, "nav_right_shortcut", None):
-            self.nav_right_shortcut.setKey(QKeySequence(nav_right_key))
-        else:
-            self.nav_right_shortcut = QShortcut(QKeySequence(nav_right_key), self)
-            self.nav_right_shortcut.activated.connect(
-                lambda: self._navigate_tree_from_editor("right")
-            )
-
-        # Постраничная навигация (Alt+PgUp / Alt+PgDn)
-        if getattr(self, "nav_page_up_shortcut", None):
-            self.nav_page_up_shortcut.setKey(QKeySequence(nav_page_up_key))
-        else:
-            self.nav_page_up_shortcut = QShortcut(QKeySequence(nav_page_up_key), self)
-            self.nav_page_up_shortcut.activated.connect(
-                lambda: self._navigate_tree_from_editor("page_up")
-            )
-
-        if getattr(self, "nav_page_down_shortcut", None):
-            self.nav_page_down_shortcut.setKey(QKeySequence(nav_page_down_key))
-        else:
-            self.nav_page_down_shortcut = QShortcut(QKeySequence(nav_page_down_key), self)
-            self.nav_page_down_shortcut.activated.connect(
-                lambda: self._navigate_tree_from_editor("page_down")
-            )
-
-        # Alt+S - переключение между последними записями "Текущие" <-> "Буфер обмена"
-        # ПРИМЕЧАНИЕ: локальный шорткат удален, логика перенесена в on_global_show_hotkey
+            shortcut = QShortcut(QKeySequence(key_sequence), self)
+            shortcut.activated.connect(callback)
+            setattr(self, attr_name, shortcut)
 
     def toggle_focus(self):
         """Переключение фокуса между деревом и редактором"""
