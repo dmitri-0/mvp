@@ -177,6 +177,8 @@ class MainWindow(
         nav_down_key = local_keys.get("navigate_down", "Alt+Down")
         nav_left_key = local_keys.get("navigate_left", "Alt+Left")
         nav_right_key = local_keys.get("navigate_right", "Alt+Right")
+        nav_page_up_key = local_keys.get("navigate_page_up", "Alt+PgUp")
+        nav_page_down_key = local_keys.get("navigate_page_down", "Alt+PgDn")
 
         if getattr(self, "nav_up_shortcut", None):
             self.nav_up_shortcut.setKey(QKeySequence(nav_up_key))
@@ -204,6 +206,23 @@ class MainWindow(
             self.nav_right_shortcut = QShortcut(QKeySequence(nav_right_key), self)
             self.nav_right_shortcut.activated.connect(
                 lambda: self._navigate_tree_from_editor("right")
+            )
+
+        # Постраничная навигация (Alt+PgUp / Alt+PgDn)
+        if getattr(self, "nav_page_up_shortcut", None):
+            self.nav_page_up_shortcut.setKey(QKeySequence(nav_page_up_key))
+        else:
+            self.nav_page_up_shortcut = QShortcut(QKeySequence(nav_page_up_key), self)
+            self.nav_page_up_shortcut.activated.connect(
+                lambda: self._navigate_tree_from_editor("page_up")
+            )
+
+        if getattr(self, "nav_page_down_shortcut", None):
+            self.nav_page_down_shortcut.setKey(QKeySequence(nav_page_down_key))
+        else:
+            self.nav_page_down_shortcut = QShortcut(QKeySequence(nav_page_down_key), self)
+            self.nav_page_down_shortcut.activated.connect(
+                lambda: self._navigate_tree_from_editor("page_down")
             )
 
         # Alt+S - переключение между последними записями "Текущие" <-> "Буфер обмена"
