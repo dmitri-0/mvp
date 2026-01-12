@@ -101,6 +101,14 @@ class NoteRepository:
         cursor.execute("DELETE FROM notes WHERE id=?", (note_id,))
         self.conn.commit()
 
+    def move_note(self, note_id, new_parent_id):
+        """Переместить заметку к новому родителю"""
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            UPDATE notes SET parent_id=?, updated_at=? WHERE id=?
+        """, (new_parent_id, datetime.now().isoformat(sep=" "), note_id))
+        self.conn.commit()
+
     def get_note_by_title(self, title, parent_id=None):
         """Найти заметку по заголовку и родителю"""
         cursor = self.conn.cursor()
@@ -205,3 +213,32 @@ class NoteRepository:
             current_id = parent_id
             
         return False
+
+    def get_root_branch_name(self, note_id):
+        """
+        Получить название корневой ветки для заметки.
+        Идет вверх по родителям до корня и возвращает его название.
+        """
+        if not note_id:
+            return None
+            
+        cursor = self.conn.cursor()
+        current_id = note_id
+        
+        # Максимум 10 уровней вглубь для защиты от циклов
+        for _ in range(10):
+            cursor.execute("SELECT id, parent_id, title FROM notes WHERE id=?", (current_id,))
+            row = cursor.fetchone()
+            
+            if not row:
+                return None
+                
+            nid, parent_id, title = row
+            
+            # Если дошли до корня дерева, возвращаем его название
+            if parent_id is None:
+                return title
+                
+            current_id = parent_id
+            
+        return None
