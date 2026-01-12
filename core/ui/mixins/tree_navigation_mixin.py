@@ -97,6 +97,8 @@ class TreeNavigationMixin:
             item = iterator.value()
             if item.data(0, Qt.UserRole) == note_id:
                 self.tree_notes.setCurrentItem(item)
+                # Схлопываем все ветки кроме текущей
+                self._collapse_all_except_current(item)
                 break
             iterator += 1
 
@@ -119,3 +121,43 @@ class TreeNavigationMixin:
             item = self._find_item_by_id(path_id)
             if item:
                 item.setExpanded(True)
+
+    def _collapse_all_except_current(self, current_item: QTreeWidgetItem | None = None):
+        """Схлопнуть все ветки кроме ветки текущей заметки.
+        
+        Схлопываются все корневые ветки. Затем раскрывается только путь 
+        к текущей заметке (если она указана).
+        
+        Args:
+            current_item: Текущий элемент дерева. Если None, используется выбранный элемент.
+        """
+        if current_item is None:
+            current_item = self.tree_notes.currentItem()
+        
+        if not current_item:
+            return
+        
+        # Схлопываем все корневые элементы
+        for i in range(self.tree_notes.topLevelItemCount()):
+            root_item = self.tree_notes.topLevelItem(i)
+            if root_item:
+                self._collapse_recursive(root_item)
+        
+        # Раскрываем только путь к текущей заметке
+        path_items = []
+        item = current_item
+        while item is not None:
+            path_items.append(item)
+            item = item.parent()
+        
+        # Раскрываем элементы пути (от корня к текущей заметке)
+        for path_item in reversed(path_items[:-1]):  # Исключаем саму заметку
+            path_item.setExpanded(True)
+    
+    def _collapse_recursive(self, item: QTreeWidgetItem):
+        """Рекурсивно схлопнуть элемент и все его дочерние элементы."""
+        item.setExpanded(False)
+        for i in range(item.childCount()):
+            child = item.child(i)
+            if child:
+                self._collapse_recursive(child)
