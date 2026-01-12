@@ -6,13 +6,6 @@ from PySide6.QtWidgets import QTextEdit, QApplication
 import re
 import base64
 
-try:
-    import markdown
-    from markdownify import markdownify as md
-    MARKDOWN_AVAILABLE = True
-except ImportError:
-    MARKDOWN_AVAILABLE = False
-
 
 class NoteEditor(QTextEdit):
     """Кастомный редактор заметок с поддержкой вставки изображений"""
@@ -24,7 +17,6 @@ class NoteEditor(QTextEdit):
         self.repo = None
         self.current_note_id = None
         self.main_window = None  # Ссылка на главное окно
-        self.view_mode = "html"  # "html" или "markdown"
 
     def set_context(self, repo):
         """Установить контекст для работы с БД"""
@@ -44,38 +36,6 @@ class NoteEditor(QTextEdit):
     def set_main_window(self, window):
         """Установить ссылку на главное окно"""
         self.main_window = window
-
-    def toggle_view_mode(self):
-        """Переключение режима просмотра между HTML и Markdown"""
-        if not MARKDOWN_AVAILABLE:
-            return
-        
-        if self.view_mode == "html":
-            # Переключаем в режим Markdown
-            html_content = self.toHtml()
-            markdown_text = self._html_to_markdown(html_content)
-            self.view_mode = "markdown"
-            self.setReadOnly(True)
-            self.setPlainText(markdown_text)
-        else:
-            # Возвращаемся в режим HTML
-            self.view_mode = "html"
-            # Перезагружаем заметку из БД
-            if self.main_window:
-                self.main_window._reload_current_note()
-
-    def _html_to_markdown(self, html_content: str) -> str:
-        """Конвертация HTML в Markdown"""
-        try:
-            # Обрабатываем изображения noteimg://
-            html_content = re.sub(
-                r'<img[^>]*src="noteimg://([0-9\.]+)"[^>]*>',
-                r'![Image](noteimg://\1)',
-                html_content
-            )
-            return md(html_content, heading_style="ATX")
-        except Exception as e:
-            return f"Ошибка конвертации: {e}"
 
     def focusOutEvent(self, event):
         super().focusOutEvent(event)
@@ -385,6 +345,7 @@ class NoteEditor(QTextEdit):
         html = self.toHtml()
         
         # Regex для поиска src="noteimg://..."
+        pattern_noteimg = re.compile(r'src=["\']?noteimg://([0-9\.]+)["\']?')
         pattern_noteimg = re.compile(r'src=["\']?noteimg://([0-9\.]+)["\']?')
         matches_noteimg = pattern_noteimg.findall(html)
         
