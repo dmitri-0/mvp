@@ -37,13 +37,39 @@ class ThemeManager:
         background-color: #2a2d2e;
     }
     
-    /* Иконки раскрытия для QTreeWidget в темной теме */
-    QTreeWidget::branch:closed:has-children {
-        image: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2IiBmaWxsPSIjY2NjY2NjIj48cGF0aCBkPSJNOC41OSAxNi41OUwxMy4xNyAxMiA4LjU5IDcuNDEgMTAgNmw2IDYtNiA2LTEuNDEtMS40MXoiLz48L3N2Zz4=);
+    /* Ветки дерева - светлый фон для видимости стрелок */
+    QTreeWidget::branch {
+        background-color: #252526;
     }
     
+    /* Треугольник вправо (закрыто) - CSS треугольник */
+    QTreeWidget::branch:closed:has-children {
+        border: none;
+        background: transparent;
+        margin: 4px;
+    }
+    
+    QTreeWidget::branch:closed:has-children:has-siblings {
+        border-left: 6px solid #e0e0e0;
+        border-top: 4px solid transparent;
+        border-bottom: 4px solid transparent;
+        width: 0;
+        height: 0;
+    }
+    
+    /* Треугольник вниз (открыто) - CSS треугольник */
     QTreeWidget::branch:open:has-children {
-        image: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2IiBmaWxsPSIjY2NjY2NjIj48cGF0aCBkPSJNNy40MSA4LjU5TDEyIDEzLjE3bDQuNTktNC41OEwxOCAxMGwtNiA2LTYtNiAxLjQxLTEuNDF6Ii8+PC9zdmc+);
+        border: none;
+        background: transparent;
+        margin: 4px;
+    }
+    
+    QTreeWidget::branch:open:has-children:has-siblings {
+        border-top: 6px solid #e0e0e0;
+        border-left: 4px solid transparent;
+        border-right: 4px solid transparent;
+        width: 0;
+        height: 0;
     }
     
     QTextEdit {
