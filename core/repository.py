@@ -242,3 +242,36 @@ class NoteRepository:
             current_id = parent_id
             
         return None
+
+    def get_note_path(self, note_id):
+        """
+        Получить полный путь заметки от корня к текущей заметке через /
+        Возвращает строку вида "Корень/Подпапка/Заметка" или None если заметка не найдена.
+        """
+        if not note_id:
+            return None
+            
+        cursor = self.conn.cursor()
+        path_parts = []
+        current_id = note_id
+        
+        # Максимум 20 уровней вглубь для защиты от циклов
+        for _ in range(20):
+            cursor.execute("SELECT id, parent_id, title FROM notes WHERE id=?", (current_id,))
+            row = cursor.fetchone()
+            
+            if not row:
+                break
+                
+            nid, parent_id, title = row
+            path_parts.append(title)
+            
+            # Если дошли до корня дерева
+            if parent_id is None:
+                break
+                
+            current_id = parent_id
+        
+        # Разворачиваем список (так как шли от заметки к корню)
+        path_parts.reverse()
+        return " / ".join(path_parts) if path_parts else None

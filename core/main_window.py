@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QSplitter,
     QTreeWidget,
+    QStatusBar,
 )
 
 from core.clipboard_monitor import ClipboardMonitor
@@ -72,6 +73,10 @@ class MainWindow(
         # Восстановление позиции сплиттера
         self._restore_splitter_state()
 
+        # Строка состояния
+        self.status_bar = QStatusBar()
+        self.setStatusBar(self.status_bar)
+
         self.current_note_id = None  # id заметки, загруженной в редактор
         self.focused_widget = self.tree_notes
         self.toggle_focus_shortcut = None  # Ссылка на шорткат
@@ -94,6 +99,20 @@ class MainWindow(
         # Загрузка и восстановление состояния
         self.load_notes_tree()
         self._restore_last_state()
+
+    def _update_status_bar(self, note_id=None):
+        """Обновление строки состояния с путем текущей заметки"""
+        if note_id is None:
+            note_id = self.current_note_id
+        
+        if note_id:
+            path = self.repo.get_note_path(note_id)
+            if path:
+                self.status_bar.showMessage(path)
+            else:
+                self.status_bar.clearMessage()
+        else:
+            self.status_bar.clearMessage()
 
     def _on_clipboard_note_created(self, note_id):
         """Обработчик создания новой записи из буфера обмена."""
@@ -217,6 +236,7 @@ class MainWindow(
         if not current_item:
             self.current_note_id = None
             self.editor.set_current_note_id(None)
+            self._update_status_bar(None)
             return
 
         note_id = current_item.data(0, Qt.UserRole)
@@ -228,6 +248,9 @@ class MainWindow(
 
             # Сохраняем ID открытой заметки
             self.repo.set_state("last_opened_note_id", note_id)
+
+            # Обновляем строку состояния
+            self._update_status_bar(note_id)
 
             row = self.repo.get_note(note_id)
             if not row:

@@ -60,11 +60,39 @@ class ClipboardMonitor(QObject):
             date_note_id = date_note[0]
         return date_note_id
 
-    def _get_or_create_time_node(self, parent_id):
-        """Создать узел времени ЧЧ.ММ.СС под указанным родителем."""
-        time_str = datetime.now().strftime("%H:%M:%S")
-        time_note_id = self.repo.create_note(parent_id, time_str)
-        return time_note_id
+    def _generate_note_title(self, text_content, image_data, has_html):
+        """Генерация заголовка для новой заметки на основе содержимого."""
+        # Если есть текст - берем первую значимую строку
+        if text_content:
+            lines = text_content.split('\n')
+            for line in lines:
+                clean_line = line.strip()
+                # Пропускаем пустые строки и разделители
+                if clean_line and clean_line not in ['---', '***', '___', '===']:
+                    # Обрезаем до разумной длины и санитизируем
+                    title = clean_line[:80]
+                    # Убираем недопустимые символы для имени файла/заголовка
+                    title = re.sub(r'[<>:"/\\|?*\r\n]', '', title)
+                    return title if title else datetime.now().strftime("%H:%M:%S")
+            # Если все строки пустые/разделители
+            return datetime.now().strftime("%H:%M:%S")
+        
+        # Если только изображение - формируем заголовок с данными об изображении
+        if image_data:
+            try:
+                image = QImage.fromData(image_data)
+                if not image.isNull():
+                    width = image.width()
+                    height = image.height()
+                    # Определяем формат (по умолчанию PNG)
+                    fmt = "PNG"
+                    return f"Image {width}x{height} {fmt}"
+            except Exception:
+                pass
+            return "Image"
+        
+        # Fallback - используем время
+        return datetime.now().strftime("%H:%M:%S")
 
     def _is_duplicate(self, text_content, image_data):
         """Проверить, является ли контент дубликатом последней записи в 'Буфер обмена'."""
@@ -109,7 +137,7 @@ class ClipboardMonitor(QObject):
         
         # Regex для поиска src="data:image/..."
         # Группы: 1 - mime type, 2 - base64 data
-        pattern_b64 = re.compile(r'src=["\']?data:(image/[^;]+);base64,([^"\'>\s]+)["\']?')
+        pattern_b64 = re.compile(r'src=["\']?data:(image/[^;]+);base64,([^"\'\>\s]+)["\']?')
         
         def replacer(match):
             nonlocal has_extracted_images
@@ -181,7 +209,10 @@ class ClipboardMonitor(QObject):
         # 2. Создаем структуру заметок
         clipboard_root_id = self._get_or_create_clipboard_root()
         date_node_id = self._get_or_create_date_node(clipboard_root_id)
-        time_node_id = self._get_or_create_time_node(date_node_id)
+        
+        # Генерируем заголовок на основе содержимого
+        note_title = self._generate_note_title(text_content, image_data, has_html)
+        time_node_id = self.repo.create_note(date_node_id, note_title)
         
         final_html_to_save = ""
         saved_something = False
@@ -236,7 +267,7 @@ class ClipboardMonitor(QObject):
 
         # 4. Фиксация результата
         if saved_something and final_html_to_save:
-            self.repo.save_note(time_node_id, datetime.now().strftime("%H:%M:%S"), final_html_to_save, 0)
+            self.repo.save_note(time_node_id, note_title, final_html_to_save, 0)
             
             # Обновляем последнее состояние
             self.last_text = text_content
