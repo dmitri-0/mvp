@@ -282,7 +282,7 @@ class MainWindow(
 
             # Ключевой момент:
             # Раньше setHtml() выполнялся ДО addResource().
-            # Тогда QTextDocument строил layout с placeholder-иконками,
+            # Тогда QTextDocument строился layout с placeholder-иконками,
             # и размеры картинок "подхватывались" только при повторном открытии заметки.
             attachments = self.repo.get_attachments(note_id)
             doc = self.editor.document()
