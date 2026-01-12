@@ -31,6 +31,28 @@ class TreeNavigationMixin:
             self._set_tree_current_item(self.tree_notes.itemBelow(current))
             return
 
+        if direction == "page_up":
+            # Эмуляция PageUp - смещение на 15 элементов вверх
+            target = current
+            for _ in range(15):
+                prev = self.tree_notes.itemAbove(target)
+                if not prev:
+                    break
+                target = prev
+            self._set_tree_current_item(target)
+            return
+
+        if direction == "page_down":
+            # Эмуляция PageDown - смещение на 15 элементов вниз
+            target = current
+            for _ in range(15):
+                nxt = self.tree_notes.itemBelow(target)
+                if not nxt:
+                    break
+                target = nxt
+            self._set_tree_current_item(target)
+            return
+
         if direction == "left":
             if current.isExpanded():
                 current.setExpanded(False)
