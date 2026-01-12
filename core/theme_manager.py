@@ -303,20 +303,11 @@ class ThemeManager:
             return
         
         if theme_name == "dark":
-            app.setStyle("Fusion")  # Сброс на Fusion для корректной работы палитры
-            app.setPalette(QPalette()) # Сброс палитры
             ThemeManager._set_dark_palette(app)
             app.setStyleSheet(ThemeManager.DARK_STYLESHEET)
         else:
-            app.setStyle("WindowsVista") # Возврат к нативному стилю (или 'Windows', 'Fusion')
             app.setPalette(app.style().standardPalette())
             app.setStyleSheet(ThemeManager.LIGHT_STYLESHEET)
-            
-        # Принудительное обновление всех виджетов верхнего уровня
-        for widget in QApplication.topLevelWidgets():
-            widget.setStyle(app.style())
-            widget.update()
-            widget.repaint()
     
     @staticmethod
     def _set_dark_palette(app):
