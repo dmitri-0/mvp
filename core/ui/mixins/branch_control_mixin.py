@@ -1,14 +1,12 @@
 class BranchControlMixin:
     """Mixin: управление ветками (Текущие / Буфер обмена / Избранное)."""
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # Словарь для хранения последних позиций в каждой ветке
-        # {"Текущие": note_id, "Буфер обмена": note_id, "Избранное": note_id}
-        self._branch_positions = {}
-
     def toggle_current_clipboard_branch(self):
         """Переключение между ветками 'Текущие', 'Буфер обмена' и 'Избранное' с сохранением позиций."""
+        # Ленивая инициализация словаря позиций, так как __init__ миксина не вызывается
+        if not hasattr(self, '_branch_positions'):
+            self._branch_positions = {}
+
         # Сохраняем текущую заметку перед переключением
         self.save_current_note()
 
