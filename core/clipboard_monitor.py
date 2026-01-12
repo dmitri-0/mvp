@@ -1,5 +1,7 @@
 """Модуль для мониторинга буфера обмена и автоматического создания записей."""
 from datetime import datetime
+import re
+import base64
 from PySide6.QtCore import QObject, Signal, QMimeData
 from PySide6.QtGui import QClipboard, QImage
 from PySide6.QtWidgets import QApplication
@@ -29,7 +31,7 @@ class ClipboardMonitor(QObject):
         mime_data = self.clipboard.mimeData()
         if mime_data:
             if mime_data.hasText():
-                self.last_text = mime_data.text()
+                self.last_text = mime_data.text().strip()
             if mime_data.hasImage():
                 image = self.clipboard.image()
                 if not image.isNull():
@@ -83,11 +85,13 @@ class ClipboardMonitor(QObject):
             doc.setHtml(body_html)
             last_plain_text = doc.toPlainText().strip()
 
-            if text_content.strip() == last_plain_text:
+            if text_content == last_plain_text:
                 return True
 
         # Сравнение изображений (по байтам первого вложения)
-        if image_data:
+        # Note: Это не сработает корректно для смешанного контента (текст + фото), 
+        # но для базового предотвращения спама "одной и той же картинкой" пойдет.
+        if image_data and not text_content:
             attachments = self.repo.get_attachments(note_id)
             if attachments and len(attachments) > 0:
                 last_image_bytes = attachments[0][2]  # bytes поле
@@ -96,24 +100,57 @@ class ClipboardMonitor(QObject):
 
         return False
 
+    def _process_html_and_extract_images(self, note_id, html):
+        """
+        Парсинг HTML и сохранение base64 картинок как вложений.
+        Возвращает (обработанный_html, найдены_ли_картинки).
+        """
+        has_extracted_images = False
+        
+        # Regex для поиска src="data:image/..."
+        # Группы: 1 - mime type, 2 - base64 data
+        pattern_b64 = re.compile(r'src=["\']?data:(image/[^;]+);base64,([^"\'>\s]+)["\']?')
+        
+        def replacer(match):
+            nonlocal has_extracted_images
+            mime_type = match.group(1)
+            b64_data = match.group(2)
+            
+            try:
+                img_bytes = base64.b64decode(b64_data)
+                # Генерируем имя файла
+                ext = mime_type.split('/')[-1]
+                # Используем timestamp и часть хеша или длины для уникальности в рамках одной операции
+                name = f"clip_{datetime.now().strftime('%H%M%S%f')}.{ext}"
+                
+                att_id = self.repo.add_attachment(note_id, name, img_bytes, mime_type)
+                has_extracted_images = True
+                return f'src="noteimg://{att_id}"'
+            except Exception as e:
+                print(f"Error saving clipboard image from HTML: {e}")
+                return match.group(0)
+
+        new_html = pattern_b64.sub(replacer, html)
+        return new_html, has_extracted_images
+
     def _on_clipboard_changed(self):
         """Обработчик изменения буфера обмена."""
         mime_data = self.clipboard.mimeData()
         if not mime_data:
             return
 
+        # 1. Получаем данные
+        
+        # Текст: обязательно делаем strip(), чтобы убрать лишние переносы (Сценарий 1)
         text_content = ""
-        image_data = b""
-        has_text = False
-        has_image = False
-
-        # Проверяем текст
         if mime_data.hasText():
-            text_content = mime_data.text()
-            if text_content and text_content.strip():
-                has_text = True
+            text_content = mime_data.text().strip()
+        
+        has_text = bool(text_content)
 
-        # Проверяем изображение
+        # Raw Image: стандартная картинка в буфере
+        image_data = b""
+        has_raw_image = False
         if mime_data.hasImage():
             image = self.clipboard.image()
             if not image.isNull():
@@ -123,55 +160,92 @@ class ClipboardMonitor(QObject):
                 image.save(buffer, "PNG")
                 image_data = buffer.data().data()
                 if image_data:
-                    has_image = True
+                    has_raw_image = True
 
-        # Если нет ни текста, ни изображения - игнорируем
-        if not has_text and not has_image:
+        # HTML: для богатого контента (текст + картинки, Сценарий 2)
+        html_content = ""
+        has_html = False
+        if mime_data.hasHtml():
+            html_content = mime_data.html()
+            if html_content:
+                has_html = True
+
+        # Если пусто - выходим
+        if not has_text and not has_raw_image and not has_html:
             return
 
-        # Проверка на дубликат
+        # Проверка на дубликат (по тексту или сырой картинке)
         if self._is_duplicate(text_content, image_data):
             return
 
-        # Создаем иерархию: Буфер обмена -> Дата -> Время
+        # 2. Создаем структуру заметок
         clipboard_root_id = self._get_or_create_clipboard_root()
         date_node_id = self._get_or_create_date_node(clipboard_root_id)
         time_node_id = self._get_or_create_time_node(date_node_id)
+        
+        final_html_to_save = ""
+        saved_something = False
 
-        # Сохраняем контент в созданную заметку
-        if has_text:
-            # Важно: переносы строк и табы в HTML внутри <p> будут схлопываться.
-            # Поэтому сохраняем как pre + white-space: pre-wrap, чтобы не терять форматирование.
+        # 3. Логика сохранения
+        
+        # ПРИОРИТЕТ А: HTML контент (Сценарий 2: Текст + Картинка)
+        # Если есть HTML, пробуем извлечь из него картинки и использовать его как основу
+        if has_html:
+            processed_html, extracted_imgs = self._process_html_and_extract_images(time_node_id, html_content)
+            
+            # Используем HTML если:
+            # 1. Мы нашли и извлекли картинки (значит это rich text с картинками)
+            # 2. ИЛИ это не просто "голый" текст, который мы бы хотели сохранить как <pre>
+            #    (но определение "просто текста" сложное, поэтому полагаемся на наличие HTML)
+            #    Однако, если пользователь скопировал просто слово в браузере, это будет HTML.
+            #    Если мы хотим сохранить форматирование - сохраняем HTML.
+            
+            # Для Сценария 2 (Текст+Картинка) extracted_imgs будет True.
+            # Для Сценария 1 (Картинка в редакторе -> HTML с base64) extracted_imgs будет True.
+            
+            if extracted_imgs or has_text:
+                final_html_to_save = processed_html
+                saved_something = True
+
+        # ПРИОРИТЕТ Б: Raw Image (Сценарий 1: Картинка из файла/скриншота, где может не быть HTML)
+        # Если HTML не обработался или не дал результата, но есть сырая картинка
+        if not saved_something and has_raw_image:
+            att_id = self.repo.add_attachment(time_node_id, "clipboard_image.png", image_data, "image/png")
+            # Если есть текст, добавляем его перед картинкой
+            if has_text:
+                from html import escape
+                final_html_to_save = (
+                    '<pre style="white-space: pre-wrap; font-family: inherit; margin: 0;">'
+                    f"{escape(text_content)}"
+                    "</pre>"
+                    f'<br/><img src="noteimg://{att_id}" />'
+                )
+            else:
+                final_html_to_save = f'<img src="noteimg://{att_id}" />'
+            saved_something = True
+
+        # ПРИОРИТЕТ В: Только текст (если HTML был пустой или мусорный, и нет картинки)
+        if not saved_something and has_text:
             from html import escape
-            html_content = (
+            final_html_to_save = (
                 '<pre style="white-space: pre-wrap; font-family: inherit; margin: 0;">'
                 f"{escape(text_content)}"
                 "</pre>"
             )
-            self.repo.save_note(time_node_id, datetime.now().strftime("%H:%M:%S"), html_content, 0)
+            saved_something = True
 
-        if has_image:
-            # Добавляем изображение как вложение
-            att_id = self.repo.add_attachment(time_node_id, "clipboard_image.png", image_data, "image/png")
-
-            # Добавляем ссылку на изображение в body_html если еще нет текста
-            if not has_text:
-                html_content = f'<img src="noteimg://{att_id}" />'
-                self.repo.save_note(time_node_id, datetime.now().strftime("%H:%M:%S"), html_content, 0)
-            else:
-                # Если есть текст, добавляем изображение после текста
-                note_data = self.repo.get_note(time_node_id)
-                if note_data:
-                    existing_html = note_data[3] or ""
-                    html_content = existing_html + f'<br/><img src="noteimg://{att_id}" />'
-                    self.repo.save_note(time_node_id, datetime.now().strftime("%H:%M:%S"), html_content, 0)
-
-        # Обновляем последнее состояние
-        self.last_text = text_content
-        self.last_image_data = image_data
-
-        # Сигнализируем о создании новой записи
-        self.clipboard_changed.emit(time_node_id)
+        # 4. Фиксация результата
+        if saved_something and final_html_to_save:
+            self.repo.save_note(time_node_id, datetime.now().strftime("%H:%M:%S"), final_html_to_save, 0)
+            
+            # Обновляем последнее состояние
+            self.last_text = text_content
+            self.last_image_data = image_data
+            
+            self.clipboard_changed.emit(time_node_id)
+        else:
+            # Если ничего не сохранили (пустота), удаляем созданный узел
+            self.repo.delete_note(time_node_id)
 
     def enable(self):
         """Включить мониторинг."""
