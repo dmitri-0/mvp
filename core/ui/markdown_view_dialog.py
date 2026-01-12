@@ -46,6 +46,13 @@ class MarkdownViewDialog(QDialog):
             # Qt's HTML engine is limited (HTML4/CSS2.1 subset).
             # It often ignores body font-size inheritance in lists/tables.
             # We must explicitly set font-size for specific tags.
+            
+            # Base font size: 14pt
+            # H1: 24pt (approx 1.7em)
+            # H2: 20pt (approx 1.4em)
+            # H3: 18pt (approx 1.3em)
+            # H4: 16pt (approx 1.15em)
+            
             style = """
             <style>
                 body { 
@@ -61,9 +68,11 @@ class MarkdownViewDialog(QDialog):
                     font-size: 14pt;
                 }
                 
-                h1 { font-size: 24pt; color: #fff; margin-top: 1em; }
-                h2 { font-size: 20pt; color: #eee; margin-top: 1em; }
-                h3 { font-size: 18pt; color: #ddd; margin-top: 1em; }
+                h1 { font-size: 26pt; font-weight: bold; color: #fff; margin-top: 1em; margin-bottom: 0.5em; }
+                h2 { font-size: 22pt; font-weight: bold; color: #eee; margin-top: 1em; margin-bottom: 0.5em; }
+                h3 { font-size: 18pt; font-weight: bold; color: #ddd; margin-top: 1em; margin-bottom: 0.5em; }
+                h4 { font-size: 16pt; font-weight: bold; color: #ccc; margin-top: 1em; margin-bottom: 0.5em; }
+                h5 { font-size: 14pt; font-weight: bold; color: #ccc; margin-top: 1em; margin-bottom: 0.5em; }
                 
                 table { border-collapse: collapse; width: 100%; margin-bottom: 1em; }
                 th, td { border: 1px solid #555; padding: 8px; }
