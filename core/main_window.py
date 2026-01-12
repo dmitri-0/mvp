@@ -9,6 +9,9 @@ from PySide6.QtWidgets import (
     QTreeWidget,
     QStatusBar,
     QMessageBox,
+    QWidget,
+    QVBoxLayout,
+    QLabel,
 )
 import subprocess
 import tempfile
@@ -60,19 +63,33 @@ class MainWindow(
         self.tree_notes.currentItemChanged.connect(self.on_note_selected)
         self.tree_notes.setSelectionMode(QTreeWidget.ExtendedSelection)
 
-        # Правая панель - редактор
+        # Правая панель - контейнер с breadcrumb-строкой и редактором
+        editor_container = QWidget()
+        editor_layout = QVBoxLayout(editor_container)
+        editor_layout.setContentsMargins(0, 0, 0, 0)
+        editor_layout.setSpacing(0)
+
+        # Breadcrumb-строка с путём заметки
+        self.path_label = QLabel()
+        self.path_label.setTextFormat(Qt.PlainText)
+        self.path_label.setMargin(4)
+        self.path_label.setMinimumHeight(24)
+        editor_layout.addWidget(self.path_label)
+
+        # Редактор заметок
         self.editor = NoteEditor()
         self.editor.setAcceptRichText(True)
         self.editor.set_context(self.repo)
         self.editor.set_main_window(self)  # Устанавливаем ссылку на главное окно
         self.editor.focusOut.connect(self._on_editor_focus_out)
+        editor_layout.addWidget(self.editor)
 
         # Применение шрифта
         self._apply_font()
 
         self.splitter = QSplitter(Qt.Horizontal)
         self.splitter.addWidget(self.tree_notes)
-        self.splitter.addWidget(self.editor)
+        self.splitter.addWidget(editor_container)
         self.splitter.setStretchFactor(0, 1)
         self.splitter.setStretchFactor(1, 3)
         self.splitter.splitterMoved.connect(self._save_splitter_state)
@@ -107,6 +124,34 @@ class MainWindow(
         # Загрузка и восстановление состояния
         self.load_notes_tree()
         self._restore_last_state()
+        
+        # Применяем начальную тему для path_label
+        self._apply_path_label_style()
+
+    def _apply_path_label_style(self):
+        """Применить стиль к breadcrumb-строке в зависимости от текущей темы"""
+        theme = self.config.get("theme", "light")
+        
+        if theme == "dark":
+            # Темная тема: серый текст, тонкая граница снизу
+            self.path_label.setStyleSheet("""
+                QLabel {
+                    background-color: #1e1e1e;
+                    color: #808080;
+                    font-size: 11px;
+                    border-bottom: 1px solid #3e3e42;
+                }
+            """)
+        else:
+            # Светлая тема: серый текст, тонкая граница снизу
+            self.path_label.setStyleSheet("""
+                QLabel {
+                    background-color: #f0f0f0;
+                    color: #6c6c6c;
+                    font-size: 11px;
+                    border-bottom: 1px solid #d0d0d0;
+                }
+            """)
 
     def _update_status_bar(self, note_id=None):
         """Обновление строки состояния с путем текущей заметки"""
@@ -121,6 +166,20 @@ class MainWindow(
                 self.status_bar.clearMessage()
         else:
             self.status_bar.clearMessage()
+
+    def _update_path_label(self, note_id=None):
+        """Обновление breadcrumb-строки с путём заметки"""
+        if note_id is None:
+            note_id = self.current_note_id
+        
+        if note_id:
+            path = self.repo.get_note_path(note_id)
+            if path:
+                self.path_label.setText(path)
+            else:
+                self.path_label.setText("")
+        else:
+            self.path_label.setText("")
 
     def _on_clipboard_note_created(self, note_id):
         """Обработчик создания новой записи из буфера обмена."""
@@ -196,6 +255,9 @@ class MainWindow(
         
         self.config.set("theme", new_theme)
         ThemeManager.apply_theme(new_theme)
+        
+        # Обновляем стиль breadcrumb-строки
+        self._apply_path_label_style()
 
     def toggle_view_mode(self):
         """Открытие отдельного окна для просмотра Markdown по F3"""
@@ -335,6 +397,7 @@ class MainWindow(
             self.current_note_id = None
             self.editor.set_current_note_id(None)
             self._update_status_bar(None)
+            self._update_path_label(None)
             return
 
         note_id = current_item.data(0, Qt.UserRole)
@@ -347,8 +410,9 @@ class MainWindow(
             # Сохраняем ID открытой заметки
             self.repo.set_state("last_opened_note_id", note_id)
 
-            # Обновляем строку состояния
+            # Обновляем строку состояния и breadcrumb
             self._update_status_bar(note_id)
+            self._update_path_label(note_id)
 
             row = self.repo.get_note(note_id)
             if not row:
