@@ -43,66 +43,57 @@ class MarkdownViewDialog(QDialog):
                  html = markdown.markdown(text, extensions=extensions[:4])
 
             # CSS
-            # Qt's HTML engine is limited (HTML4/CSS2.1 subset).
-            # It often ignores body font-size inheritance in lists/tables.
-            # We must explicitly set font-size for specific tags.
-            
-            # Base font size: 14pt
-            # H1: 24pt (approx 1.7em)
-            # H2: 20pt (approx 1.4em)
-            # H3: 18pt (approx 1.3em)
-            # H4: 16pt (approx 1.15em)
+            # Using pixels (px) instead of points (pt) often behaves more predictably in Qt's rich text engine.
+            # Using font-weight: 600 instead of 'bold' sometimes helps.
             
             style = """
             <style>
                 body { 
                     font-family: sans-serif; 
-                    font-size: 14pt; 
+                    font-size: 18px; 
                     line-height: 1.6; 
                     color: #ddd;
                     background-color: #2b2b2b;
                 }
                 
-                /* Explicit inheritance fix for Qt */
+                /* Force base font size */
                 p, ul, ol, li, dl, dt, dd, table, th, td, blockquote {
-                    font-size: 14pt;
+                    font-size: 18px;
                 }
                 
-                h1 { font-size: 26pt; font-weight: bold; color: #fff; margin-top: 1em; margin-bottom: 0.5em; }
-                h2 { font-size: 22pt; font-weight: bold; color: #eee; margin-top: 1em; margin-bottom: 0.5em; }
-                h3 { font-size: 18pt; font-weight: bold; color: #ddd; margin-top: 1em; margin-bottom: 0.5em; }
-                h4 { font-size: 16pt; font-weight: bold; color: #ccc; margin-top: 1em; margin-bottom: 0.5em; }
-                h5 { font-size: 14pt; font-weight: bold; color: #ccc; margin-top: 1em; margin-bottom: 0.5em; }
+                h1 { font-size: 36px; font-weight: 600; color: #fff; margin-top: 20px; margin-bottom: 10px; text-decoration: underline; }
+                h2 { font-size: 28px; font-weight: 600; color: #eee; margin-top: 18px; margin-bottom: 9px; }
+                h3 { font-size: 24px; font-weight: 600; color: #ddd; margin-top: 16px; margin-bottom: 8px; }
+                h4 { font-size: 20px; font-weight: 600; color: #ccc; margin-top: 14px; margin-bottom: 7px; }
                 
                 table { border-collapse: collapse; width: 100%; margin-bottom: 1em; }
                 th, td { border: 1px solid #555; padding: 8px; }
-                th { background-color: #444; color: #fff; font-weight: bold; }
+                th { background-color: #444; color: #fff; font-weight: 600; }
                 
-                /* Code blocks */
                 code { 
                     background-color: #444; 
                     padding: 2px 5px; 
                     border-radius: 3px; 
-                    font-family: 'Consolas', 'Courier New', monospace; 
-                    font-size: 14pt; /* Explicitly match body size */
+                    font-family: 'Courier New', monospace; 
+                    font-size: 18px; 
                 }
                 pre { 
                     background-color: #333; 
                     padding: 15px; 
                     border-radius: 5px; 
                     margin: 1em 0; 
-                    font-size: 14pt; /* Ensure block code is also big */
+                    font-size: 18px; 
                 }
                 
                 blockquote { 
                     border-left: 4px solid #777; 
-                    padding-left: 1em; 
+                    padding-left: 10px; 
                     color: #aaa; 
                     margin-left: 0; 
                 }
                 
                 ul, ol { margin-left: 20px; padding-left: 20px; }
-                li { margin-bottom: 0.5em; }
+                li { margin-bottom: 5px; }
                 
                 del { text-decoration: line-through; color: #888; }
                 a { color: #5dade2; text-decoration: none; }
