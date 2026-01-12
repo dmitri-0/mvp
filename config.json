@@ -7,7 +7,7 @@
       "show_window": "<alt>+s"
     },
     "local": {
-      "toggle_focus": "F3",
+      "toggle_focus": "Alt+W",
       "add_note": "F4",
       "add_to_favorites": "F5",
       "move_note": "F6",
