@@ -4,7 +4,7 @@ from PySide6.QtWidgets import QMessageBox, QInputDialog
 
 
 class NoteActionMixin:
-    """Mixin: действия над заметками (добавление, удаление)."""
+    """Миксин: действия над заметками (добавление, удаление, перемещение)"""
 
     def add_note(self):
         """Добавление новой заметки. 
@@ -28,9 +28,7 @@ class NoteActionMixin:
                     contents = []
                     # Сортируем выбранные элементы по порядку в дереве (визуальному), 
                     # чтобы текст склеивался логично, а не в порядке выделения
-                    # (хотя selectedItems обычно возвращает в порядке выделения или индекса, надежнее отсортировать)
-                    # Но QTreeWidget.selectedItems() не гарантирует порядок. 
-                    # Простейшая сортировка - пока оставим как есть или можно по visualItemRect().y()
+                    # (хотя QTreeWidget.selectedItems() обычно возвращает в порядке выделения или индекса, надежнее отсортировать)
                     
                     # Лучше пройтись по всем выбранным
                     for item in selected_items:
@@ -163,6 +161,62 @@ class NoteActionMixin:
 
             # Обновляем отображение в дереве
             current_item.setText(0, new_title)
+
+    def move_notes(self):
+        """Перемещение заметок (F6) - только внутри веток Избранное и Текущие"""
+        selected_items = self.tree_notes.selectedItems()
+        if not selected_items:
+            return
+
+        # Проверяем, что все выбранные заметки находятся в "Избранное" или "Текущие"
+        allowed_branches = {"Избранное", "Текущие"}
+        note_ids = []
+        
+        for item in selected_items:
+            note_id = item.data(0, Qt.UserRole)
+            if not note_id:
+                continue
+            
+            # Проверяем корневую ветку
+            branch = self.repo.get_root_branch_name(note_id)
+            if branch not in allowed_branches:
+                QMessageBox.warning(
+                    self, 
+                    "Перемещение",
+                    f'Перемещение доступно только для заметок в ветках "Избранное" и "Текущие".'
+                )
+                return
+            
+            # Проверяем, что это не корневая заметка
+            row = self.repo.get_note(note_id)
+            if row and row[1] is None:  # parent_id is None
+                QMessageBox.warning(self, "Перемещение", "Корневые ветки нельзя перемещать")
+                return
+            
+            note_ids.append(note_id)
+
+        if not note_ids:
+            return
+
+        # Сохраняем текущую заметку перед перемещением
+        self.save_current_note()
+
+        # Открываем диалог выбора родителя
+        from core.ui.move_note_dialog import MoveNoteDialog
+        dialog = MoveNoteDialog(self.repo, note_ids, self)
+        
+        if dialog.exec() and dialog.selected_parent_id is not None:
+            # Перемещаем все выбранные заметки
+            for note_id in note_ids:
+                self.repo.move_note(note_id, dialog.selected_parent_id)
+            
+            # Обновляем дерево
+            self.load_notes_tree()
+            
+            # Выбираем первую перемещенную заметку
+            if note_ids:
+                self._expand_path_to_note(note_ids[0])
+                self._select_note_by_id(note_ids[0])
 
     def delete_notes(self):
         """Удаление выбранных заметок с возвратом фокуса в ту же ветку"""
