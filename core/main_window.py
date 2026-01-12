@@ -133,11 +133,11 @@ class MainWindow(
         theme = self.config.get("theme", "light")
         
         if theme == "dark":
-            # Темная тема: серый текст, тонкая граница снизу
+            # Тёмная тема: светло-серый текст (более яркий), тонкая граница снизу
             self.path_label.setStyleSheet("""
                 QLabel {
                     background-color: #1e1e1e;
-                    color: #808080;
+                    color: #b0b0b0;
                     font-size: 11px;
                     border-bottom: 1px solid #3e3e42;
                 }
