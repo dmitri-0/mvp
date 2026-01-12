@@ -9,8 +9,11 @@
     "local": {
       "toggle_focus": "F3",
       "add_note": "F4",
+      "add_to_favorites": "F5",
       "move_note": "F6",
       "delete_note": "F8",
+      "rename_note": "F2",
+      "history": "Alt+D",
       "settings": "Ctrl+,",
       "navigate_up": "Alt+Up",
       "navigate_down": "Alt+Down",
