@@ -7,7 +7,7 @@ class ImageSelectionDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Select Image to Edit")
         self.resize(800, 500)
-        self.images = images  # list of (id, name, data, mime)
+        self.images = images  # list of (id, note_id, name, data, mime)
         self.selected_image = None
         
         layout = QVBoxLayout(self)
@@ -15,7 +15,9 @@ class ImageSelectionDialog(QDialog):
         splitter = QSplitter(Qt.Horizontal)
         
         self.list_widget = QListWidget()
-        for _, name, _, _ in self.images:
+        for img_data in self.images:
+            # img_data structure: (id, note_id, name, data, mime)
+            name = img_data[2]
             self.list_widget.addItem(name)
         self.list_widget.currentRowChanged.connect(self.on_row_changed)
         
@@ -42,7 +44,8 @@ class ImageSelectionDialog(QDialog):
     def on_row_changed(self, row):
         if 0 <= row < len(self.images):
             self.selected_image = self.images[row]
-            _, _, data, _ = self.selected_image
+            # Structure: (id, note_id, name, data, mime)
+            data = self.selected_image[3]
             if data:
                 img = QImage.fromData(data)
                 pixmap = QPixmap.fromImage(img)
