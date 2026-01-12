@@ -291,6 +291,7 @@ class MainWindow(QMainWindow):
             self.del_note_shortcut.activated.connect(self.delete_notes)
 
         # Ctrl+, - открыть настройки
+        # ПРИМЕЧАНИЕ: используем keyPressEvent для кроссплатформенной поддержки раскладок
         settings_key = local_keys.get("settings", "Ctrl+,")
         if getattr(self, 'settings_shortcut', None):
             self.settings_shortcut.setKey(QKeySequence(settings_key))
@@ -337,12 +338,7 @@ class MainWindow(QMainWindow):
             self.nav_right_shortcut.activated.connect(lambda: self._navigate_tree_from_editor('right'))
         
         # Alt+S - переключение между последними записями "Текущие" <-> "Буфер обмена"
-        toggle_branch_key = local_keys.get("toggle_branch", "Alt+S")
-        if getattr(self, 'toggle_branch_shortcut', None):
-            self.toggle_branch_shortcut.setKey(QKeySequence(toggle_branch_key))
-        else:
-            self.toggle_branch_shortcut = QShortcut(QKeySequence(toggle_branch_key), self)
-            self.toggle_branch_shortcut.activated.connect(self.toggle_current_clipboard_branch)
+        # ПРИМЕЧАНИЕ: локальный шорткат удален, логика перенесена в on_global_show_hotkey
 
     def _set_tree_current_item(self, item: QTreeWidgetItem | None):
         if item is None:
@@ -805,6 +801,15 @@ class MainWindow(QMainWindow):
             if iter.value():
                 self.tree_notes.setCurrentItem(iter.value())
 
+    def on_global_show_hotkey(self):
+        """Обработчик глобального Alt+S: показать окно или переключить ветки"""
+        if self.isVisible() and self.isActiveWindow():
+            # Окно уже активно - переключаем между Текущие/Буфер обмена
+            self.toggle_current_clipboard_branch()
+        else:
+            # Окно скрыто или неактивно - показываем
+            self.show_and_focus()
+
     def show_and_focus(self):
         """Показать и активировать окно - используется единый метод аналогичный show_from_tray"""
         # Показываем окно нормально (не свернутым)
@@ -826,9 +831,6 @@ class MainWindow(QMainWindow):
                 user32.SetForegroundWindow(hwnd)
             except Exception as e:
                 print(f"Ошибка при активации окна через Windows API: {e}")
-        
-        # Обновляем открытые базы/заметки если необходимо
-        # self.refresh_opened_bases()  # Если есть аналогичный функционал
         
         # Фокус на редактор если заметка выбрана
         if self.current_note_id:
@@ -853,6 +855,14 @@ class MainWindow(QMainWindow):
 
     def keyPressEvent(self, event):
         """Обработка нажатий клавиш"""
+        # Ctrl+, независимо от раскладки (Windows)
+        if sys.platform == 'win32':
+            # VK_OEM_COMMA = 0xBC (физическая клавиша запятой)
+            if (event.modifiers() & Qt.ControlModifier) and event.nativeVirtualKey() == 0xBC:
+                self.open_settings()
+                event.accept()
+                return
+        
         if event.key() == Qt.Key_Escape:
             self.hide_to_tray()
             event.accept()
