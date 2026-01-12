@@ -230,6 +230,7 @@ class MainWindow(
             local_keys = hotkeys
 
         # 1. Основные команды
+        self._bind_shortcut("toggle_focus_shortcut", local_keys.get("toggle_focus", "Alt+W"), self.toggle_focus)
         self._bind_shortcut("toggle_view_mode_shortcut", local_keys.get("toggle_view_mode", "F3"), self.toggle_view_mode)
         self._bind_shortcut("add_note_shortcut", local_keys.get("add_note", "F4"), self.add_note)
         self._bind_shortcut("del_note_shortcut", local_keys.get("delete_note", "F8"), self.delete_notes)
