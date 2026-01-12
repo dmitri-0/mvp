@@ -35,6 +35,8 @@ class ThemeManager:
         color: #cccccc;
         border: 1px solid #3e3e42;
         alternate-background-color: #2d2d30;
+        /* Убираем пунктирные линии */
+        show-decoration-selected: 0;
     }}
     
     QTreeWidget::item:selected {{
@@ -46,19 +48,26 @@ class ThemeManager:
         background-color: #2a2d2e;
     }}
     
-    /* Стилизация веток дерева */
+    /* Стилизация веток дерева - базовый стиль */
     QTreeWidget::branch {{
         background: transparent;
     }}
+
+    /* Скрываем стандартные индикаторы, если они есть */
+    QTreeWidget::branch:has-siblings:!adjoins-item {{
+        border-image: none;
+    }}
     
-    /* Закрытая ветка (стрелка вправо) */
+    QTreeWidget::branch:!has-children:!has-siblings:adjoins-item {{
+        border-image: none;
+    }}
+    
     QTreeWidget::branch:has-children:!has-siblings:closed,
     QTreeWidget::branch:closed:has-children:has-siblings {{
         border-image: none;
         image: url({branch_closed_icon});
     }}
     
-    /* Открытая ветка (стрелка вниз) */
     QTreeWidget::branch:open:has-children:!has-siblings,
     QTreeWidget::branch:open:has-children:has-siblings {{
         border-image: none;
@@ -166,7 +175,7 @@ class ThemeManager:
         height: 0px;
     }}
     
-    QScrollBar:horizontal {{
+    QScrollBar::horizontal {{
         background-color: #1e1e1e;
         height: 14px;
         border: none;
@@ -332,10 +341,14 @@ class ThemeManager:
         
         if theme_name == "dark":
             ThemeManager._set_dark_palette(app)
-            # Подставляем пути к иконкам используя format с экранированными скобками
+            # Используем встроенные base64 иконки, которые точно работают
+            # Эти строки - валидные base64 PNG
+            closed_icon = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAQElEQVR4nGNgGAU4wZ07d/4To46JUkPwGkCMIQQNgBmCyyCiDMDnGpIMUFFRYUQXYyFXI9EuwKcZLyA2HQwDAACkMBpd3WfFcAAAAABJRU5ErkJggg=="
+            open_icon = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAO0lEQVR4nGNgGAUDDxjRBe7cufOfkCYVFRW4PiZ8koQ0YzUAnyHYxLEaQArAaQC6bYS8hhMQE6gjHQAAldkKKyYDX0IAAAAASUVORK5CYII="
+            
             stylesheet = ThemeManager.DARK_STYLESHEET_TEMPLATE.format(
-                branch_closed_icon=ThemeManager.get_icon_path("branch-closed.png"),
-                branch_open_icon=ThemeManager.get_icon_path("branch-open.png")
+                branch_closed_icon=closed_icon,
+                branch_open_icon=open_icon
             )
             app.setStyleSheet(stylesheet)
         else:
