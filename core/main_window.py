@@ -29,6 +29,7 @@ from core.ui.mixins.branch_control_mixin import BranchControlMixin
 from core.ui.settings_dialog import SettingsDialog
 from core.ui.history_dialog import HistoryDialog
 from core.ui.image_selection_dialog import ImageSelectionDialog
+from core.ui.markdown_view_dialog import MarkdownViewDialog
 
 
 class MainWindow(
@@ -197,8 +198,13 @@ class MainWindow(
         ThemeManager.apply_theme(new_theme)
 
     def toggle_view_mode(self):
-        """Переключение режима просмотра (обычный текст / markdown) по F3"""
-        self.editor.toggle_view_mode()
+        """Открытие отдельного окна для просмотра Markdown по F3"""
+        if not self.current_note_id:
+            return
+        
+        html_content = self.editor.toHtml()
+        dlg = MarkdownViewDialog(html_content, self)
+        dlg.show() # Используем show вместо exec для немодального окна если нужно
 
     def set_hotkey_controller(self, controller):
         """Установить контроллер глобальных горячих клавиш"""
