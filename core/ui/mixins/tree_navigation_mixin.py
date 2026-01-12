@@ -99,6 +99,8 @@ class TreeNavigationMixin:
                 self.tree_notes.setCurrentItem(item)
                 # Схлопываем все ветки кроме текущей
                 self._collapse_all_except_current(item)
+                # Прокручиваем к элементу, чтобы его было видно
+                self.tree_notes.scrollToItem(item)
                 break
             iterator += 1
 
@@ -156,6 +158,9 @@ class TreeNavigationMixin:
         # reversed(path_items[1:]) содержит [root, ..., parent] - порядок раскрытия сверху вниз
         for path_item in reversed(path_items[1:]): 
             path_item.setExpanded(True)
+            
+        # Прокручиваем к элементу после всех манипуляций с раскрытием/скрытием
+        self.tree_notes.scrollToItem(current_item)
     
     def _collapse_recursive(self, item: QTreeWidgetItem):
         """Рекурсивно схлопнуть элемент и все его дочерние элементы."""
