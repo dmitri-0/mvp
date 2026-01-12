@@ -57,15 +57,12 @@ class HistoryDialog(QDialog):
             # note: (id, title, updated_at)
             nid, title, updated_at = note
             
-            # Форматируем дату
-            try:
-                # updated_at is iso format string
-                display_time = str(updated_at)[:16].replace('T', ' ')
-            except Exception:
-                display_time = str(updated_at)
-                
-            item_text = f"[{display_time}] {title}"
-            item = QListWidgetItem(item_text)
+            # Получаем полный путь заметки (как в статус баре)
+            path = self.repo.get_note_path(nid)
+            if not path:
+                path = title  # Fallback на title если путь не найден
+            
+            item = QListWidgetItem(path)
             item.setData(Qt.UserRole, nid)
             self.list_widget.addItem(item)
             

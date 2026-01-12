@@ -72,8 +72,8 @@ class ThemeManager:
     }
     
     QStatusBar {
-        background-color: #007acc;
-        color: #ffffff;
+        background-color: #2d2d30;
+        color: #b0b0b0;
     }
     """
     
