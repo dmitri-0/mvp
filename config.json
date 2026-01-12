@@ -17,7 +17,8 @@
       "navigate_left": "Alt+Left",
       "navigate_right": "Alt+Right",
       "navigate_page_up": "Alt+PgUp",
-      "navigate_page_down": "Alt+PgDown"
+      "navigate_page_down": "Alt+PgDown",
+      "toggle_branch": "Alt+S"
     }
   },
   "window_geometry": {
