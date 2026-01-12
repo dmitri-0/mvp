@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 from core.note_editor import NoteEditor
 from core.repository import NoteRepository
 from core.config import Config
+from core.clipboard_monitor import ClipboardMonitor
 
 
 class SettingsDialog(QDialog):
@@ -144,6 +145,13 @@ class MainWindow(QMainWindow):
         # Флаги защиты от гонок событий
         self._is_switching_note = False
         self._is_reloading_tree = False
+        
+        # Последняя активная ветка ("Текущие" или "Буфер обмена")
+        self._last_active_branch = "Текущие"
+
+        # Инициализация монитора буфера обмена
+        self.clipboard_monitor = ClipboardMonitor(self.repo, self)
+        self.clipboard_monitor.clipboard_changed.connect(self._on_clipboard_note_created)
 
         # Шорткаты
         self._setup_shortcuts()
@@ -151,6 +159,13 @@ class MainWindow(QMainWindow):
         # Загрузка и восстановление состояния
         self.load_notes_tree()
         self._restore_last_state()
+
+    def _on_clipboard_note_created(self, note_id):
+        """Обработчик создания новой записи из буфера обмена."""
+        # Перезагружаем дерево чтобы отобразить новую запись
+        self.load_notes_tree()
+        # Можно автоматически выбрать новую запись если нужно
+        # self._select_note_by_id(note_id)
 
     def set_hotkey_controller(self, controller):
         """Установить контроллер глобальных горячих клавиш"""
@@ -320,6 +335,14 @@ class MainWindow(QMainWindow):
         else:
             self.nav_right_shortcut = QShortcut(QKeySequence(nav_right_key), self)
             self.nav_right_shortcut.activated.connect(lambda: self._navigate_tree_from_editor('right'))
+        
+        # Alt+S - переключение между последними записями "Текущие" <-> "Буфер обмена"
+        toggle_branch_key = local_keys.get("toggle_branch", "Alt+S")
+        if getattr(self, 'toggle_branch_shortcut', None):
+            self.toggle_branch_shortcut.setKey(QKeySequence(toggle_branch_key))
+        else:
+            self.toggle_branch_shortcut = QShortcut(QKeySequence(toggle_branch_key), self)
+            self.toggle_branch_shortcut.activated.connect(self.toggle_current_clipboard_branch)
 
     def _set_tree_current_item(self, item: QTreeWidgetItem | None):
         if item is None:
@@ -373,6 +396,59 @@ class MainWindow(QMainWindow):
         else:
             self.editor.setFocus()
             self.focused_widget = self.editor
+    
+    def toggle_current_clipboard_branch(self):
+        """Переключение между последними записями в 'Текущие' и 'Буфер обмена'."""
+        # Сохраняем текущую заметку перед переключением
+        self.save_current_note()
+        
+        # Определяем текущую ветку
+        current_item = self.tree_notes.currentItem()
+        current_branch = self._get_root_branch_name(current_item)
+        
+        # Если текущая ветка "Текущие", переходим в "Буфер обмена" и наоборот
+        if current_branch == "Текущие":
+            target_branch = "Буфер обмена"
+        else:
+            target_branch = "Текущие"
+        
+        # Находим последнюю запись в целевой ветке
+        target_root = self.repo.get_note_by_title(target_branch)
+        if not target_root:
+            # Создаем корневую ветку если не существует
+            target_root_id = self.repo.create_note(None, target_branch)
+            self.load_notes_tree()
+            self._select_note_by_id(target_root_id)
+        else:
+            target_root_id = target_root[0]
+            last_note = self.repo.get_last_descendant(target_root_id)
+            
+            if last_note:
+                last_note_id = last_note[0]
+                # Раскрываем путь к последней записи и выбираем её
+                self._expand_path_to_note(last_note_id)
+                self._select_note_by_id(last_note_id)
+            else:
+                # Если нет записей в целевой ветке, выбираем саму ветку
+                self._select_note_by_id(target_root_id)
+        
+        # Сохраняем последнюю активную ветку
+        self._last_active_branch = target_branch
+        
+        # Устанавливаем фокус в редактор
+        self.editor.setFocus()
+    
+    def _get_root_branch_name(self, item: QTreeWidgetItem | None) -> str:
+        """Получить имя корневой ветки для указанного элемента."""
+        if not item:
+            return "Текущие"  # По умолчанию
+        
+        # Поднимаемся до корневого элемента
+        current = item
+        while current.parent() is not None:
+            current = current.parent()
+        
+        return current.text(0)
 
     def _find_item_by_id(self, note_id: int):
         iterator = QTreeWidgetItemIterator(self.tree_notes)
