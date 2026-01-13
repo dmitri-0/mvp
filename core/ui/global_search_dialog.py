@@ -1,10 +1,10 @@
-import html  # <--- Добавьте этот импорт
+import html
 import re
 import traceback
 import unicodedata
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QTextDocument, QTextCharFormat, QColor
+from PySide6.QtGui import QTextDocument, QPalette, QColor
 from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
@@ -35,6 +35,11 @@ class GlobalSearchDialog(QDialog):
 
         self._build_ui()
 
+    def showEvent(self, event):
+        # При каждом показе применяем текущую тему (в приложении она переключается динамически)
+        super().showEvent(event)
+        self._apply_theme()
+
     def _build_ui(self):
         root = QVBoxLayout(self)
 
@@ -50,7 +55,6 @@ class GlobalSearchDialog(QDialog):
 
         # Метка количества найденных
         self.stats_lbl = QLabel("")
-        self.stats_lbl.setStyleSheet("color: #666; margin-left: 10px;")
         top.addWidget(self.stats_lbl)
 
         root.addLayout(top)
@@ -63,27 +67,55 @@ class GlobalSearchDialog(QDialog):
         self.list = QListWidget()
         self.list.itemActivated.connect(self._open_selected)
         self.list.currentItemChanged.connect(self._on_current_changed)
+        # В некоторых стилях/темах длинные строки могут переноситься "по буквам".
+        # Явно отключаем переносы и включаем элипсис.
+        self.list.setWordWrap(False)
+        self.list.setTextElideMode(Qt.ElideRight)
+        self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         splitter.addWidget(self.list)
 
         # Превью (правая часть) - используем NoteEditor для поддержки картинок
         self.preview = NoteEditor()
         self.preview.setReadOnly(True)
         self.preview.set_context(self.repo)
-
-        # CSS для автоматического масштабирования картинок под ширину окна
-        self.preview.document().setDefaultStyleSheet("""
-            img { max-width: 100%; height: auto; }
-        """)
-
         splitter.addWidget(self.preview)
 
         splitter.setSizes([350, 650])
 
-        hint = QLabel("Enter/двойной клик — открыть заметку, Esc — закрыть")
-        hint.setStyleSheet("color: #777;")
-        root.addWidget(hint)
+        self.hint_lbl = QLabel("Enter/двойной клик — открыть заметку, Esc — закрыть")
+        root.addWidget(self.hint_lbl)
 
         self.edit.setFocus()
+
+        self._apply_theme()
+
+    def _apply_theme(self):
+        """Привязка цветов/HTML к текущей палитре (поддержка тёмной темы)."""
+        pal = self.palette()
+
+        # "Приглушённый" цвет текста (для подсказок/статуса)
+        placeholder_role = getattr(QPalette.ColorRole, "PlaceholderText", QPalette.ColorRole.Text)
+        muted = pal.color(placeholder_role)
+
+        self.stats_lbl.setStyleSheet(f"color: {muted.name(QColor.HexRgb)}; margin-left: 10px;")
+        self.hint_lbl.setStyleSheet(f"color: {muted.name(QColor.HexRgb)};")
+
+        # Базовые цвета для HTML предпросмотра
+        text = pal.color(QPalette.ColorRole.Text).name(QColor.HexRgb)
+        base = pal.color(QPalette.ColorRole.Base).name(QColor.HexRgb)
+        link = pal.color(QPalette.ColorRole.Link).name(QColor.HexRgb)
+
+        # Важно: setDefaultStyleSheet задаёт CSS по умолчанию для HTML в QTextDocument.
+        # Если его не задать, QTextEdit в тёмной теме может остаться с чёрным текстом по умолчанию.
+        self.preview.document().setDefaultStyleSheet(
+            "\n".join(
+                [
+                    f"body {{ color: {text}; background-color: {base}; }}",
+                    f"a {{ color: {link}; }}",
+                    "img { max-width: 100%; height: auto; }",
+                ]
+            )
+        )
 
     def _schedule_search(self):
         self._debounce_timer.start(150)
@@ -163,7 +195,7 @@ class GlobalSearchDialog(QDialog):
         query_norm = unicodedata.normalize("NFC", (query or "").replace("\u00a0", " "))
 
         if not query_norm:
-             return html_content
+            return html_content
 
         pattern = re.escape(query_norm)
         try:
@@ -176,10 +208,23 @@ class GlobalSearchDialog(QDialog):
         for m in rx.finditer(plain_norm):
             match_positions.append((m.start(), m.end()))
 
+        pal = self.preview.palette()
+        placeholder_role = getattr(QPalette.ColorRole, "PlaceholderText", QPalette.ColorRole.Text)
+        muted = pal.color(placeholder_role).name(QColor.HexRgb)
+        border = pal.color(QPalette.ColorRole.Mid).name(QColor.HexRgb)
+        card_bg = pal.color(QPalette.ColorRole.AlternateBase).name(QColor.HexRgb)
+        window_bg = pal.color(QPalette.ColorRole.Window).lightness()
+        is_dark = window_bg < 128
+
+        match_bg = "#ffd54f" if is_dark else "#ffeb3b"
+        match_fg = "#000000"
+        highlight_style = f"background-color: {match_bg}; color: {match_fg}; font-weight: bold;"
+
         # Если ничего не нашли в тексте (может быть в тегах, но мы ищем по контенту)
         if not match_positions:
             return (
-                "<div style='color:#888; font-size:12px; margin:0 0 10px 0; border-bottom:1px solid #ddd; padding-bottom:5px;'>"
+                f"<div style='color:{muted}; font-size:12px; margin:0 0 10px 0; "
+                f"border-bottom:1px solid {border}; padding-bottom:5px;'>"
                 "Найдено совпадений: 0 (показан полный текст)"
                 "</div>" + html_content
             )
@@ -187,11 +232,8 @@ class GlobalSearchDialog(QDialog):
         # 2. Формируем HTML список фрагментов
         CONTEXT_LEN = 60
         text_len = len(plain)
-        
+
         found_fragments = []
-        
-        # Стиль для подсветки
-        highlight_style = "background-color: #ffff00; color: #000000; font-weight: bold;"
 
         for i, (start, end) in enumerate(match_positions):
             # Определяем границы фрагмента
@@ -204,9 +246,6 @@ class GlobalSearchDialog(QDialog):
             suffix = plain[end:frag_end]
 
             # Собираем HTML, ОБЯЗАТЕЛЬНО экранируя текст
-            # (чтобы <br> в тексте заметки стал &lt;br&gt; и не ломал верстку, 
-            #  а реальные переносы мы заменим на <br> при желании, или оставим как есть)
-            
             safe_prefix = html.escape(prefix)
             safe_match = html.escape(match_text)
             safe_suffix = html.escape(suffix)
@@ -222,20 +261,22 @@ class GlobalSearchDialog(QDialog):
                 f"<span style='{highlight_style}'>{safe_match}</span>"
                 f"{safe_suffix}"
             )
-            
+
             # Заменяем переносы строк на <br>, чтобы в браузере выглядело как текст
             snippet_html = snippet_html.replace("\n", "<br>")
 
-            # Оборачиваем в блок
+            # Оборачиваем в блок (цвета берём из текущей палитры, чтобы работало в тёмной теме)
             found_fragments.append(
-                f"<div style='margin-bottom: 20px; padding: 10px; border: 1px solid #eee; background: #fafafa; font-family: sans-serif;'>"
-                f"<div style='font-size: 10px; color: #999; margin-bottom: 5px;'>Фрагмент #{i+1}</div>"
+                f"<div style='margin-bottom: 20px; padding: 10px; "
+                f"border: 1px solid {border}; background: {card_bg}; font-family: sans-serif;'>"
+                f"<div style='font-size: 10px; color: {muted}; margin-bottom: 5px;'>Фрагмент #{i+1}</div>"
                 f"<div style='font-size: 13px; line-height: 1.4;'>{snippet_html}</div>"
-                f"</div>"
+                "</div>"
             )
 
         header = (
-            "<div style='color:#888; font-size:12px; margin:0 0 10px 0; border-bottom:1px solid #ddd; padding-bottom:5px;'>"
+            f"<div style='color:{muted}; font-size:12px; margin:0 0 10px 0; "
+            f"border-bottom:1px solid {border}; padding-bottom:5px;'>"
             f"Найдено совпадений: {len(match_positions)}"
             "</div>"
         )
