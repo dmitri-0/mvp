@@ -59,7 +59,13 @@ class GlobalSearchDialog(QDialog):
         # Превью (правая часть) - используем NoteEditor для поддержки картинок
         self.preview = NoteEditor()
         self.preview.setReadOnly(True)
-        self.preview.set_context(self.repo)  # Подключаем репозиторий для загрузки картинок
+        self.preview.set_context(self.repo)
+        
+        # CSS для автоматического масштабирования картинок под ширину окна
+        # max-width: 100% ограничивает ширину картинки шириной контейнера
+        # height: auto сохраняет пропорции
+        self.preview.document().setDefaultStyleSheet("img { max-width: 100%; height: auto; }")
+        
         splitter.addWidget(self.preview)
 
         splitter.setSizes([350, 650])
