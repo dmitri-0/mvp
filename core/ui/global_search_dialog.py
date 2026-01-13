@@ -1,5 +1,6 @@
 import re
 import traceback
+import unicodedata
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QTextDocument, QTextCursor, QTextCharFormat, QColor
@@ -159,13 +160,15 @@ class GlobalSearchDialog(QDialog):
         doc = QTextDocument()
         doc.setHtml(html)
 
-        # 1) Четко находим все вхождения по ПЛОСКОМУ тексту (надежнее, чем QTextDocument.find)
+        # 1) Четко находим все вхождения по ПЛОСКОМУ тексту
         plain = doc.toPlainText() or ""
 
-        # В HTML/Qt часто встречается NBSP вместо обычного пробела.
-        # Чтобы поиск был предсказуемым, приводим и текст, и запрос к одному виду.
-        plain_norm = plain.replace("\u00a0", " ")
-        query_norm = (query or "").replace("\u00a0", " ")
+        # Нормализация (NFC) и замена NBSP для надежного поиска
+        plain_norm = unicodedata.normalize("NFC", plain.replace("\u00a0", " "))
+        query_norm = unicodedata.normalize("NFC", (query or "").replace("\u00a0", " "))
+
+        if not query_norm:
+             return html
 
         pattern = re.escape(query_norm)
         rx = re.compile(pattern, re.IGNORECASE)
@@ -174,17 +177,6 @@ class GlobalSearchDialog(QDialog):
         for m in rx.finditer(plain_norm):
             match_positions.append((m.start(), m.end()))
 
-        # 2) Подсвечиваем в документе (по тем же позициям)
-        highlight_fmt = QTextCharFormat()
-        highlight_fmt.setBackground(QColor("yellow"))
-        highlight_fmt.setForeground(Qt.black)
-
-        for start, end in match_positions:
-            c = QTextCursor(doc)
-            c.setPosition(start)
-            c.setPosition(end, QTextCursor.KeepAnchor)
-            c.mergeCharFormat(highlight_fmt)
-
         if not match_positions:
             return (
                 "<div style='color:#888; font-size:12px; margin:0 0 10px 0; border-bottom:1px solid #ddd; padding-bottom:5px;'>"
@@ -192,12 +184,24 @@ class GlobalSearchDialog(QDialog):
                 "</div>" + html
             )
 
-        # 3) Формируем список фрагментов без объединения
+        # 2) Подсвечиваем в документе (по тем же позициям)
+        highlight_fmt = QTextCharFormat()
+        highlight_fmt.setBackground(QColor("yellow"))
+        highlight_fmt.setForeground(Qt.black)
+
+        # Важно: применяем форматирование к документу
+        for start, end in match_positions:
+            c = QTextCursor(doc)
+            c.setPosition(start)
+            c.setPosition(end, QTextCursor.KeepAnchor)
+            c.mergeCharFormat(highlight_fmt)
+
+        # 3) Формируем список фрагментов
         CONTEXT_LEN = 60
         doc_len = max(0, doc.characterCount() - 1)
 
         found_fragments = []
-        for start, end in match_positions:
+        for i, (start, end) in enumerate(match_positions):
             frag_start = max(0, start - CONTEXT_LEN)
             frag_end = min(doc_len, end + CONTEXT_LEN)
 
@@ -206,12 +210,16 @@ class GlobalSearchDialog(QDialog):
             if frag_end > frag_start:
                 extract_cursor.setPosition(frag_end, QTextCursor.KeepAnchor)
 
-            fragment = extract_cursor.selection().toHtml()
-            fragment = self._clean_qt_html(fragment)
+            # Получаем HTML фрагмента (с подсветкой)
+            fragment_html = extract_cursor.selection().toHtml()
+            cleaned_fragment = self._clean_qt_html(fragment_html)
+            
+            # Добавляем в список
             found_fragments.append(
-                "<div style='margin: 10px 0; border-left: 2px solid #ddd; padding-left: 10px;'>"
-                f"{fragment}"
-                "</div>"
+                f"<div style='margin-bottom: 20px; padding: 10px; border: 1px solid #eee; background: #fafafa;'>"
+                f"<div style='font-size: 10px; color: #999; margin-bottom: 5px;'>Фрагмент #{i+1}</div>"
+                f"{cleaned_fragment}"
+                f"</div>"
             )
 
         debug_info = (
@@ -220,18 +228,27 @@ class GlobalSearchDialog(QDialog):
             "</div>"
         )
 
-        return debug_info + "<hr style='border: 0; border-top: 1px solid #eee; margin: 10px 0;'>".join(found_fragments)
+        return debug_info + "".join(found_fragments)
 
     def _clean_qt_html(self, html_fragment):
         """Убирает обертки HTML/BODY из фрагмента, возвращаемого toHtml()"""
-        match = re.search(r"<body[^>]*>(.*)</body>", html_fragment, re.DOTALL | re.IGNORECASE)
-        if match:
-            return match.group(1)
+        # Попытка найти содержимое внутри body через строковые операции (надежнее regex)
+        start_tag = "<body"
+        end_tag = "</body>"
+        
+        lower_html = html_fragment.lower()
+        body_start = lower_html.find(start_tag)
+        
+        if body_start != -1:
+            # Находим закрывающую скобку тега body (например <body style='...'>)
+            content_start = lower_html.find(">", body_start) + 1
+            body_end = lower_html.rfind(end_tag)
+            
+            if body_end != -1 and content_start < body_end:
+                return html_fragment[content_start:body_end]
 
-        match_html = re.search(r"<html[^>]*>(.*)</html>", html_fragment, re.DOTALL | re.IGNORECASE)
-        if match_html:
-            return match_html.group(1)
-
+        # Если body не найден, пробуем вернуть как есть или очистить от html тегов
+        # (резервный вариант для простых фрагментов)
         return html_fragment
 
     def _on_search_enter(self):
