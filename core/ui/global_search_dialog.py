@@ -1,9 +1,10 @@
+import html  # <--- Добавьте этот импорт
 import re
 import traceback
 import unicodedata
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QTextDocument, QTextCursor, QTextCharFormat, QColor
+from PySide6.QtGui import QTextDocument, QTextCharFormat, QColor
 from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
@@ -101,13 +102,11 @@ class GlobalSearchDialog(QDialog):
 
         for note_id, title, body_html, updated_at in rows:
             path = self.repo.get_note_path(note_id) or title
-
-            # Только путь, без сниппета
             text = path
 
             item = QListWidgetItem(text)
             item.setData(Qt.UserRole, note_id)
-            item.setData(Qt.UserRole + 1, body_html)  # Сохраняем тело (может быть неактуально)
+            item.setData(Qt.UserRole + 1, body_html)
             self.list.addItem(item)
 
     def _open_selected(self, item: QListWidgetItem):
@@ -122,19 +121,13 @@ class GlobalSearchDialog(QDialog):
             return
 
         note_id = current.data(Qt.UserRole)
-        # Важно: устанавливаем ID заметки, чтобы NoteEditor мог загружать картинки
         self.preview.set_current_note_id(note_id)
 
         query = self.edit.text().strip()
-
-        # Двухступенчатый подход:
-        # 1) поиск по базе -> список (уже сделан в _run_search)
-        # 2) при выборе заметки заново грузим полный текст заметки и ищем в нем ВСЕ вхождения
         body_html = ""
         try:
             row = self.repo.get_note(int(note_id)) if note_id else None
             if row:
-                # (id, parent_id, title, body_html, cursor_position, updated_at)
                 body_html = row[3] or ""
             else:
                 body_html = current.data(Qt.UserRole + 1) or ""
@@ -155,101 +148,99 @@ class GlobalSearchDialog(QDialog):
             )
             self.preview.setHtml(err_msg + body_html)
 
-    def _generate_snippets(self, html: str, query: str) -> str:
-        """Создает HTML со списком фрагментов. Сначала точно находит все вхождения, потом выводит."""
+    def _generate_snippets(self, html_content: str, query: str) -> str:
+        """
+        ВАРИАНТ A: Работаем с plain text.
+        Извлекаем текст, ищем совпадения, вырезаем фрагменты и оборачиваем в HTML сами.
+        """
+        # 1. Получаем чистый текст из HTML с помощью QTextDocument (он хорошо убирает теги)
         doc = QTextDocument()
-        doc.setHtml(html)
-
-        # 1) Четко находим все вхождения по ПЛОСКОМУ тексту
+        doc.setHtml(html_content)
         plain = doc.toPlainText() or ""
 
-        # Нормализация (NFC) и замена NBSP для надежного поиска
+        # Нормализация для поиска
         plain_norm = unicodedata.normalize("NFC", plain.replace("\u00a0", " "))
         query_norm = unicodedata.normalize("NFC", (query or "").replace("\u00a0", " "))
 
         if not query_norm:
-             return html
+             return html_content
 
         pattern = re.escape(query_norm)
-        rx = re.compile(pattern, re.IGNORECASE)
+        try:
+            rx = re.compile(pattern, re.IGNORECASE)
+        except re.error:
+            # Если запрос некорректен как регулярка (маловероятно после escape), возвращаем оригинал
+            return html_content
 
         match_positions = []
         for m in rx.finditer(plain_norm):
             match_positions.append((m.start(), m.end()))
 
+        # Если ничего не нашли в тексте (может быть в тегах, но мы ищем по контенту)
         if not match_positions:
             return (
                 "<div style='color:#888; font-size:12px; margin:0 0 10px 0; border-bottom:1px solid #ddd; padding-bottom:5px;'>"
                 "Найдено совпадений: 0 (показан полный текст)"
-                "</div>" + html
+                "</div>" + html_content
             )
 
-        # 2) Подсвечиваем в документе (по тем же позициям)
-        highlight_fmt = QTextCharFormat()
-        highlight_fmt.setBackground(QColor("yellow"))
-        highlight_fmt.setForeground(Qt.black)
-
-        # Важно: применяем форматирование к документу
-        for start, end in match_positions:
-            c = QTextCursor(doc)
-            c.setPosition(start)
-            c.setPosition(end, QTextCursor.KeepAnchor)
-            c.mergeCharFormat(highlight_fmt)
-
-        # 3) Формируем список фрагментов
+        # 2. Формируем HTML список фрагментов
         CONTEXT_LEN = 60
-        doc_len = max(0, doc.characterCount() - 1)
-
+        text_len = len(plain)
+        
         found_fragments = []
+        
+        # Стиль для подсветки
+        highlight_style = "background-color: #ffff00; color: #000000; font-weight: bold;"
+
         for i, (start, end) in enumerate(match_positions):
+            # Определяем границы фрагмента
             frag_start = max(0, start - CONTEXT_LEN)
-            frag_end = min(doc_len, end + CONTEXT_LEN)
+            frag_end = min(text_len, end + CONTEXT_LEN)
 
-            extract_cursor = QTextCursor(doc)
-            extract_cursor.setPosition(frag_start)
-            if frag_end > frag_start:
-                extract_cursor.setPosition(frag_end, QTextCursor.KeepAnchor)
+            # Вырезаем части текста
+            prefix = plain[frag_start:start]
+            match_text = plain[start:end]
+            suffix = plain[end:frag_end]
 
-            # Получаем HTML фрагмента (с подсветкой)
-            fragment_html = extract_cursor.selection().toHtml()
-            cleaned_fragment = self._clean_qt_html(fragment_html)
+            # Собираем HTML, ОБЯЗАТЕЛЬНО экранируя текст
+            # (чтобы <br> в тексте заметки стал &lt;br&gt; и не ломал верстку, 
+            #  а реальные переносы мы заменим на <br> при желании, или оставим как есть)
             
-            # Добавляем в список
+            safe_prefix = html.escape(prefix)
+            safe_match = html.escape(match_text)
+            safe_suffix = html.escape(suffix)
+
+            # Добавляем многоточия, если обрезали
+            if frag_start > 0:
+                safe_prefix = "..." + safe_prefix
+            if frag_end < text_len:
+                safe_suffix = safe_suffix + "..."
+
+            snippet_html = (
+                f"{safe_prefix}"
+                f"<span style='{highlight_style}'>{safe_match}</span>"
+                f"{safe_suffix}"
+            )
+            
+            # Заменяем переносы строк на <br>, чтобы в браузере выглядело как текст
+            snippet_html = snippet_html.replace("\n", "<br>")
+
+            # Оборачиваем в блок
             found_fragments.append(
-                f"<div style='margin-bottom: 20px; padding: 10px; border: 1px solid #eee; background: #fafafa;'>"
+                f"<div style='margin-bottom: 20px; padding: 10px; border: 1px solid #eee; background: #fafafa; font-family: sans-serif;'>"
                 f"<div style='font-size: 10px; color: #999; margin-bottom: 5px;'>Фрагмент #{i+1}</div>"
-                f"{cleaned_fragment}"
+                f"<div style='font-size: 13px; line-height: 1.4;'>{snippet_html}</div>"
                 f"</div>"
             )
 
-        debug_info = (
+        header = (
             "<div style='color:#888; font-size:12px; margin:0 0 10px 0; border-bottom:1px solid #ddd; padding-bottom:5px;'>"
             f"Найдено совпадений: {len(match_positions)}"
             "</div>"
         )
 
-        return debug_info + "".join(found_fragments)
-
-    def _clean_qt_html(self, html_fragment):
-        """Убирает обертки HTML/BODY из фрагмента, возвращаемого toHtml()"""
-        # Попытка найти содержимое внутри body через строковые операции (надежнее regex)
-        start_tag = "<body"
-        end_tag = "</body>"
-        
-        lower_html = html_fragment.lower()
-        body_start = lower_html.find(start_tag)
-        
-        if body_start != -1:
-            # Находим закрывающую скобку тега body (например <body style='...'>)
-            content_start = lower_html.find(">", body_start) + 1
-            body_end = lower_html.rfind(end_tag)
-            
-            if body_end != -1 and content_start < body_end:
-                return html_fragment[content_start:body_end]
-
-        # Если body не найден, пробуем вернуть как есть или очистить от html тегов
-        # (резервный вариант для простых фрагментов)
-        return html_fragment
+        return header + "".join(found_fragments)
 
     def _on_search_enter(self):
         """Перенос фокуса в список при нажатии Enter в строке поиска."""
