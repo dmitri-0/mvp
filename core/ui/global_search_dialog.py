@@ -1,6 +1,7 @@
 import re
 
 from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QTextDocument, QTextCursor
 from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
@@ -10,8 +11,9 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QVBoxLayout,
     QSplitter,
-    QTextBrowser,
 )
+
+from core.note_editor import NoteEditor
 
 
 class GlobalSearchDialog(QDialog):
@@ -54,9 +56,10 @@ class GlobalSearchDialog(QDialog):
         self.list.currentItemChanged.connect(self._on_current_changed)
         splitter.addWidget(self.list)
 
-        # Превью (правая часть)
-        self.preview = QTextBrowser()
-        self.preview.setOpenExternalLinks(False)
+        # Превью (правая часть) - используем NoteEditor для поддержки картинок
+        self.preview = NoteEditor()
+        self.preview.setReadOnly(True)
+        self.preview.set_context(self.repo)  # Подключаем репозиторий для загрузки картинок
         splitter.addWidget(self.preview)
 
         splitter.setSizes([350, 650])
@@ -101,8 +104,77 @@ class GlobalSearchDialog(QDialog):
             self.preview.clear()
             return
         
-        body_html = current.data(Qt.UserRole + 1)
-        self.preview.setHtml(body_html or "")
+        body_html = current.data(Qt.UserRole + 1) or ""
+        query = self.edit.text().strip()
+        
+        if not query:
+            self.preview.setHtml(body_html)
+            return
+
+        # Генерация сниппетов (отрывков с искомым текстом)
+        snippets_html = self._generate_snippets(body_html, query)
+        self.preview.setHtml(snippets_html)
+
+    def _generate_snippets(self, html: str, query: str) -> str:
+        """Создает HTML со списком фрагментов, содержащих искомый текст."""
+        doc = QTextDocument()
+        doc.setHtml(html)
+        
+        found_fragments = []
+        cursor = QTextCursor(doc)
+        
+        # Ищем все вхождения (case insensitive по умолчанию для find?)
+        # QTextDocument.find flags: defaults to 0 (case insensitive? no, sensitive usually)
+        # Проверим поведение. Обычно find чувствителен, если не указаны флаги?
+        # По документации: FindFlags default is 0. 
+        # Но SQLite LIKE - case insensitive. Нам лучше искать case insensitive.
+        find_flags = QTextDocument.FindFlag(0) # По умолчанию
+        
+        # Чтобы искать регистронезависимо, нужно бы lower(), но тогда мы потеряем форматирование при выделении.
+        # QTextDocument.find не имеет явного флага CaseInsensitive (он по умолчанию такой? Нет).
+        # Однако, давайте попробуем искать "как есть". Если пользователь ввел с маленькой, а там с большой...
+        # Workaround: использовать регулярку? doc.find(QRegularExpression)
+        
+        # Используем QRegularExpression для case-insensitive поиска
+        # Экранируем спецсимволы в запросе
+        import re
+        escaped_query = re.escape(query)
+        # (?i) - case insensitive
+        # text_regex = f"(?i){escaped_query}" # Это для python re.
+        # Для QRegularExpression (Qt6)
+        from PySide6.QtCore import QRegularExpression
+        regex = QRegularExpression(escaped_query, QRegularExpression.CaseInsensitiveOption)
+        
+        cursor = doc.find(regex, cursor)
+        
+        limit = 50 # Защита от зависания при тысячах совпадений
+        count = 0
+        
+        seen_blocks = set()
+
+        while not cursor.isNull() and count < limit:
+            # Выделяем блок (абзац), в котором нашлось совпадение
+            cursor.select(QTextCursor.BlockUnderCursor)
+            block_num = cursor.blockNumber()
+            
+            if block_num not in seen_blocks:
+                fragment = cursor.selection().toHtml()
+                found_fragments.append(fragment)
+                seen_blocks.add(block_num)
+                count += 1
+            
+            # Сдвигаем курсор дальше, чтобы не зациклиться на одном месте, 
+            # но doc.find начинает поиск ПОСЛЕ текущей позиции курсора (если это range)
+            # cursor - это selection range. find ищет от конца selection.
+            
+            cursor = doc.find(regex, cursor)
+
+        if not found_fragments:
+            # Если не нашли в теле (например, совпадение в заголовке), покажем начало
+            return "<i>Текст найден в заголовке или не может быть выделен...</i><hr>" + html[:500] + "..."
+
+        # Собираем фрагменты через разделитель
+        return "<hr style='border: 0; border-top: 1px solid #ccc; margin: 10px 0;'>".join(found_fragments)
 
     def _on_search_enter(self):
         """Перенос фокуса в список при нажатии Enter в строке поиска."""
