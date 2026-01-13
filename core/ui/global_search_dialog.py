@@ -138,26 +138,37 @@ class GlobalSearchDialog(QDialog):
         escaped_query = re.escape(query)
         regex = QRegularExpression(escaped_query, QRegularExpression.CaseInsensitiveOption)
         
-        highlight_cursor = doc.find(regex)
         highlight_fmt = QTextCharFormat()
         highlight_fmt.setBackground(QColor("yellow"))
         highlight_fmt.setForeground(Qt.black)
         
-        # Список позиций всех совпадений
         match_positions = []
-
-        while not highlight_cursor.isNull():
-            highlight_cursor.mergeCharFormat(highlight_fmt)
-            # Сохраняем позицию начала и конца совпадения
-            match_positions.append((highlight_cursor.selectionStart(), highlight_cursor.selectionEnd()))
-            highlight_cursor = doc.find(regex, highlight_cursor)
+        pos = 0
+        
+        # Более надежный цикл поиска с использованием целочисленной позиции
+        while True:
+            # Ищем, начиная с позиции pos
+            cursor = doc.find(regex, pos)
+            
+            if cursor.isNull():
+                break
+                
+            # Проверка, чтобы избежать бесконечного цикла, если найдено совпадение нулевой длины (хотя с обычным текстом маловероятно)
+            if cursor.selectionEnd() <= pos:
+                pos += 1
+                continue
+                
+            cursor.mergeCharFormat(highlight_fmt)
+            match_positions.append((cursor.selectionStart(), cursor.selectionEnd()))
+            
+            # Следующий поиск начинаем сразу после конца текущего совпадения
+            pos = cursor.selectionEnd()
 
         if not match_positions:
             return html
 
         # 2. Формирование сниппетов (300 символов до и после)
         CONTEXT_LEN = 300
-        # Важно: используем characterCount() - 1, так как последний символ это всегда параграф-сепаратор
         doc_len = max(0, doc.characterCount() - 1) 
         
         # 2.1 Объединение диапазонов
@@ -186,14 +197,12 @@ class GlobalSearchDialog(QDialog):
             
             cursor = QTextCursor(doc)
             cursor.setPosition(safe_start)
-            # Если позиции совпадают, selection будет пустой, но ошибки быть не должно
             if safe_end > safe_start:
                 cursor.setPosition(safe_end, QTextCursor.KeepAnchor)
             
             fragment = cursor.selection().toHtml()
             fragment = self._clean_qt_html(fragment)
             
-            # Просто фрагмент без маркеров ...
             snippet_html = f"<div style='margin: 10px 0;'>{fragment}</div>"
             found_fragments.append(snippet_html)
             
