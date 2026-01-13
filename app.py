@@ -2,6 +2,7 @@
 import sys
 import os
 from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QIcon
 from core.main_window import MainWindow
 from core.repository import NoteRepository
 from core.tray_controller import TrayController
@@ -10,9 +11,24 @@ from core.config import Config
 from core.theme_manager import ThemeManager
 
 
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
+
+
 def main():
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
+    
+    # Установка иконки приложения
+    icon_path = resource_path("app_icon.ico")
+    app.setWindowIcon(QIcon(icon_path))
     
     # Загрузка конфигурации
     config = Config("config.json")
