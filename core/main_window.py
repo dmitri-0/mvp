@@ -131,8 +131,10 @@ class MainWindow(
         self.load_notes_tree()
         self._restore_last_state()
 
-        # Применяем начальную тему для path_label
+        # Применяем начальную тему
+        initial_theme = self.config.get("theme", "light")
         self._apply_path_label_style()
+        self.search_widget.update_theme(initial_theme)
 
     def show_search(self):
         """Открыть панель поиска (Ctrl+F)."""
@@ -269,8 +271,9 @@ class MainWindow(
         self.config.set("theme", new_theme)
         ThemeManager.apply_theme(new_theme)
 
-        # Обновляем стиль breadcrumb-строки
+        # Обновляем стиль breadcrumb-строки и виджета поиска
         self._apply_path_label_style()
+        self.search_widget.update_theme(new_theme)
 
     def toggle_view_mode(self):
         """Открытие отдельного окна для просмотра Markdown по F3"""
