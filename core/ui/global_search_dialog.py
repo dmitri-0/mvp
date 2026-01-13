@@ -1,7 +1,7 @@
 import re
 import traceback
 
-from PySide6.QtCore import Qt, QTimer, QRegularExpression
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QTextDocument, QTextCursor, QTextCharFormat, QColor
 from PySide6.QtWidgets import (
     QDialog,
@@ -106,7 +106,7 @@ class GlobalSearchDialog(QDialog):
 
             item = QListWidgetItem(text)
             item.setData(Qt.UserRole, note_id)
-            item.setData(Qt.UserRole + 1, body_html)  # Сохраняем тело для превью
+            item.setData(Qt.UserRole + 1, body_html)  # Сохраняем тело (может быть неактуально)
             self.list.addItem(item)
 
     def _open_selected(self, item: QListWidgetItem):
@@ -120,65 +120,71 @@ class GlobalSearchDialog(QDialog):
             self.preview.clear()
             return
 
-        body_html = current.data(Qt.UserRole + 1) or ""
-        # Важно: устанавливаем ID заметки, чтобы NoteEditor мог загружать картинки
         note_id = current.data(Qt.UserRole)
+        # Важно: устанавливаем ID заметки, чтобы NoteEditor мог загружать картинки
         self.preview.set_current_note_id(note_id)
 
         query = self.edit.text().strip()
+
+        # Двухступенчатый подход:
+        # 1) поиск по базе -> список (уже сделан в _run_search)
+        # 2) при выборе заметки заново грузим полный текст заметки и ищем в нем ВСЕ вхождения
+        body_html = ""
+        try:
+            row = self.repo.get_note(int(note_id)) if note_id else None
+            if row:
+                # (id, parent_id, title, body_html, cursor_position, updated_at)
+                body_html = row[3] or ""
+            else:
+                body_html = current.data(Qt.UserRole + 1) or ""
+        except Exception:
+            body_html = current.data(Qt.UserRole + 1) or ""
 
         if not query:
             self.preview.setHtml(body_html)
             return
 
-        # Генерация сниппетов (отрывков с искомым текстом)
         try:
             snippets_html = self._generate_snippets(body_html, query)
             self.preview.setHtml(snippets_html)
         except Exception as e:
-            # Отображаем ошибку прямо в окне предпросмотра для отладки
-            err_msg = f"<div style='color:red; font-weight:bold;'>Error generating snippets:<br>{e}<br><pre>{traceback.format_exc()}</pre></div><hr>"
+            err_msg = (
+                "<div style='color:red; font-weight:bold;'>Error generating snippets:<br>"
+                f"{e}<br><pre>{traceback.format_exc()}</pre></div><hr>"
+            )
             self.preview.setHtml(err_msg + body_html)
-            print(f"Error generating snippets: {e}")
 
     def _generate_snippets(self, html: str, query: str) -> str:
-        """Создает HTML со списком фрагментов. Показывает контекст вокруг совпадения."""
+        """Создает HTML со списком фрагментов. Сначала точно находит все вхождения, потом выводит."""
         doc = QTextDocument()
         doc.setHtml(html)
 
-        escaped_query = re.escape(query)
-        regex = QRegularExpression(escaped_query, QRegularExpression.CaseInsensitiveOption)
+        # 1) Четко находим все вхождения по ПЛОСКОМУ тексту (надежнее, чем QTextDocument.find)
+        plain = doc.toPlainText() or ""
 
+        # В HTML/Qt часто встречается NBSP (
+0) вместо обычного пробела.
+        # Чтобы поиск был предсказуемым, приводим и текст, и запрос к одному виду.
+        plain_norm = plain.replace("\u00a0", " ")
+        query_norm = (query or "").replace("\u00a0", " ")
+
+        pattern = re.escape(query_norm)
+        rx = re.compile(pattern, re.IGNORECASE)
+
+        match_positions = []
+        for m in rx.finditer(plain_norm):
+            match_positions.append((m.start(), m.end()))
+
+        # 2) Подсвечиваем в документе (по тем же позициям)
         highlight_fmt = QTextCharFormat()
         highlight_fmt.setBackground(QColor("yellow"))
         highlight_fmt.setForeground(Qt.black)
 
-        match_positions = []
-        pos = 0
-        
-        # 1. Находим все вхождения последовательно через int position
-        # Это надежнее, чем поиск через курсор, который может не сдвинуться
-        while True:
-            cursor = doc.find(regex, pos)
-            
-            if cursor.isNull():
-                break
-                
-            # Защита от бесконечного цикла, если найдено совпадение "назад" или нулевой длины
-            if cursor.selectionEnd() <= pos:
-                pos += 1
-                if pos >= doc.characterCount():
-                    break
-                continue
-
-            # Подсвечиваем найденное
-            cursor.mergeCharFormat(highlight_fmt)
-            
-            # Сохраняем позиции
-            match_positions.append((cursor.selectionStart(), cursor.selectionEnd()))
-            
-            # Сдвигаем позицию поиска за конец текущего вхождения
-            pos = cursor.selectionEnd()
+        for start, end in match_positions:
+            c = QTextCursor(doc)
+            c.setPosition(start)
+            c.setPosition(end, QTextCursor.KeepAnchor)
+            c.mergeCharFormat(highlight_fmt)
 
         if not match_positions:
             return (
@@ -187,25 +193,27 @@ class GlobalSearchDialog(QDialog):
                 "</div>" + html
             )
 
-        # 2. Формируем список фрагментов без объединения
+        # 3) Формируем список фрагментов без объединения
         CONTEXT_LEN = 60
         doc_len = max(0, doc.characterCount() - 1)
-        
+
         found_fragments = []
-        
         for start, end in match_positions:
             frag_start = max(0, start - CONTEXT_LEN)
             frag_end = min(doc_len, end + CONTEXT_LEN)
-            
+
             extract_cursor = QTextCursor(doc)
             extract_cursor.setPosition(frag_start)
             if frag_end > frag_start:
                 extract_cursor.setPosition(frag_end, QTextCursor.KeepAnchor)
-            
+
             fragment = extract_cursor.selection().toHtml()
             fragment = self._clean_qt_html(fragment)
-            
-            found_fragments.append(f"<div style='margin: 10px 0; border-left: 2px solid #ddd; padding-left: 10px;'>{fragment}</div>")
+            found_fragments.append(
+                "<div style='margin: 10px 0; border-left: 2px solid #ddd; padding-left: 10px;'>"
+                f"{fragment}"
+                "</div>"
+            )
 
         debug_info = (
             "<div style='color:#888; font-size:12px; margin:0 0 10px 0; border-bottom:1px solid #ddd; padding-bottom:5px;'>"
@@ -217,16 +225,12 @@ class GlobalSearchDialog(QDialog):
 
     def _clean_qt_html(self, html_fragment):
         """Убирает обертки HTML/BODY из фрагмента, возвращаемого toHtml()"""
-        # Сначала ищем body
         match = re.search(r"<body[^>]*>(.*)</body>", html_fragment, re.DOTALL | re.IGNORECASE)
         if match:
             return match.group(1)
-        
-        # Если body не найдено, пробуем вырезать html теги, если они есть
+
         match_html = re.search(r"<html[^>]*>(.*)</html>", html_fragment, re.DOTALL | re.IGNORECASE)
         if match_html:
-            # Внутри html может быть head и body, но если мы здесь, значит body regex не сработал
-            # Вернем содержимое html
             return match_html.group(1)
 
         return html_fragment
