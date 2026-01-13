@@ -162,8 +162,7 @@ class GlobalSearchDialog(QDialog):
         # 1) Четко находим все вхождения по ПЛОСКОМУ тексту (надежнее, чем QTextDocument.find)
         plain = doc.toPlainText() or ""
 
-        # В HTML/Qt часто встречается NBSP (
-0) вместо обычного пробела.
+        # В HTML/Qt часто встречается NBSP вместо обычного пробела.
         # Чтобы поиск был предсказуемым, приводим и текст, и запрос к одному виду.
         plain_norm = plain.replace("\u00a0", " ")
         query_norm = (query or "").replace("\u00a0", " ")
