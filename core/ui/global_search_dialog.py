@@ -124,7 +124,7 @@ class GlobalSearchDialog(QDialog):
         self.preview.setHtml(snippets_html)
 
     def _generate_snippets(self, html: str, query: str) -> str:
-        """Создает HTML со списком фрагментов, содержащих искомый текст с подсветкой."""
+        """Создает HTML со списком фрагментов. Показывает 300 символов до и после совпадения."""
         doc = QTextDocument()
         doc.setHtml(html)
         
@@ -137,48 +137,85 @@ class GlobalSearchDialog(QDialog):
         highlight_fmt.setBackground(QColor("yellow"))
         highlight_fmt.setForeground(Qt.black)
         
+        # Список позиций всех совпадений
+        match_positions = []
+
         while not highlight_cursor.isNull():
             highlight_cursor.mergeCharFormat(highlight_fmt)
+            # Сохраняем позицию начала и конца совпадения
+            match_positions.append((highlight_cursor.selectionStart(), highlight_cursor.selectionEnd()))
             highlight_cursor = doc.find(regex, highlight_cursor)
-            
-        # 2. Извлечение уникальных блоков с совпадениями
-        found_fragments = []
-        cursor = doc.find(regex)
-        
-        limit = 50 
-        count = 0
-        seen_blocks = set()
 
-        while not cursor.isNull() and count < limit:
-            # Выделяем блок (абзац) целиком
-            cursor.select(QTextCursor.BlockUnderCursor)
-            block_num = cursor.blockNumber()
-            
-            if block_num not in seen_blocks:
-                # Получаем HTML фрагмент (с уже примененной подсветкой)
-                fragment = cursor.selection().toHtml()
-                
-                # Очищаем от лишних тегов (body, html), оставляем суть
-                fragment = self._clean_qt_html(fragment)
-                
-                # Добавляем маркеры "..." и стилизацию
-                snippet_html = (
-                    f"<div style='color: #888; font-size: 0.9em;'>...</div>"
-                    f"<div style='margin: 5px 0;'>{fragment}</div>"
-                    f"<div style='color: #888; font-size: 0.9em;'>...</div>"
-                )
-                
-                found_fragments.append(snippet_html)
-                seen_blocks.add(block_num)
-                count += 1
-            
-            cursor = doc.find(regex, cursor)
-
-        if not found_fragments:
+        if not match_positions:
             return html
 
-        # Собираем фрагменты через разделитель
-        return "<hr style='border: 0; border-top: 1px solid #ccc; margin: 20px 0;'>".join(found_fragments)
+        # 2. Формирование сниппетов (300 символов до и после)
+        snippets = []
+        CONTEXT_LEN = 300
+        doc_len = doc.characterCount()
+        
+        # Чтобы не дублировать пересекающиеся области, будем следить за последней обработанной позицией
+        last_end_pos = -1
+
+        for start_pos, end_pos in match_positions:
+            # Если это совпадение уже попало в предыдущий сниппет, пропускаем или объединяем?
+            # Лучше объединять, если они близко.
+            
+            # Определяем границы контекста
+            snippet_start = max(0, start_pos - CONTEXT_LEN)
+            snippet_end = min(doc_len, end_pos + CONTEXT_LEN)
+            
+            # Если начало текущего сниппета перекрывается с концом предыдущего (или очень близко)
+            # То просто расширяем предыдущий сниппет
+            if snippets and snippet_start <= last_end_pos:
+                # Получаем последний добавленный фрагмент и его границы (нужно хранить)
+                # Упростим: просто создадим новый курсор от (последний end) до (текущий end)
+                # Но это сложно склеить.
+                
+                # Проще: перезаписать последний сниппет, расширив его.
+                # Но у нас уже HTML текст в списке.
+                
+                # Давайте хранить список диапазонов (start, end) для сниппетов, объединять их, а потом генерировать HTML.
+                pass
+            else:
+                # Это новый сниппет? пока просто соберем диапазоны
+                pass
+        
+        # 2.1 Объединение диапазонов
+        merged_ranges = []
+        for start_pos, end_pos in match_positions:
+            rng_start = max(0, start_pos - CONTEXT_LEN)
+            rng_end = min(doc_len, end_pos + CONTEXT_LEN)
+            
+            if not merged_ranges:
+                merged_ranges.append([rng_start, rng_end])
+            else:
+                last_rng = merged_ranges[-1]
+                # Если текущий диапазон пересекается с последним или идет сразу за ним
+                if rng_start <= last_rng[1]:
+                    last_rng[1] = max(last_rng[1], rng_end)
+                else:
+                    merged_ranges.append([rng_start, rng_end])
+        
+        # 2.2 Генерация HTML для каждого диапазона
+        found_fragments = []
+        
+        for rng_start, rng_end in merged_ranges:
+            cursor = QTextCursor(doc)
+            cursor.setPosition(rng_start)
+            cursor.setPosition(rng_end, QTextCursor.KeepAnchor)
+            
+            fragment = cursor.selection().toHtml()
+            fragment = self._clean_qt_html(fragment)
+            
+            snippet_html = (
+                f"<div style='color: #888; font-size: 0.9em; text-align: center;'>...</div>"
+                f"<div style='margin: 10px 0;'>{fragment}</div>"
+                f"<div style='color: #888; font-size: 0.9em; text-align: center;'>...</div>"
+            )
+            found_fragments.append(snippet_html)
+            
+        return "<hr style='border: 0; border-top: 2px solid #ccc; margin: 20px 0;'>".join(found_fragments)
 
     def _clean_qt_html(self, html_fragment):
         """Убирает обертки HTML/BODY из фрагмента, возвращаемого toHtml()"""
