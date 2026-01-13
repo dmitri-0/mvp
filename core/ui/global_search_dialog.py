@@ -45,6 +45,12 @@ class GlobalSearchDialog(QDialog):
         self.edit.returnPressed.connect(self._on_search_enter)
         top.addWidget(lbl)
         top.addWidget(self.edit, 1)
+
+        # Метка количества найденных
+        self.stats_lbl = QLabel("")
+        self.stats_lbl.setStyleSheet("color: #666; margin-left: 10px;")
+        top.addWidget(self.stats_lbl)
+
         root.addLayout(top)
 
         # Разделитель с результатами и превью
@@ -84,11 +90,14 @@ class GlobalSearchDialog(QDialog):
         q = (self.edit.text() or "").strip()
         self.list.clear()
         self.preview.clear()
+        self.stats_lbl.clear()
 
         if not q:
             return
 
         rows = self.repo.search_notes(q, limit=200)
+        self.stats_lbl.setText(f"Найдено: {len(rows)}")
+
         for note_id, title, body_html, updated_at in rows:
             path = self.repo.get_note_path(note_id) or title
 
@@ -133,7 +142,7 @@ class GlobalSearchDialog(QDialog):
             print(f"Error generating snippets: {e}")
 
     def _generate_snippets(self, html: str, query: str) -> str:
-        """Создает HTML со списком фрагментов. Показывает 300 символов до и после совпадения."""
+        """Создает HTML со списком фрагментов. Показывает контекст вокруг совпадения."""
         doc = QTextDocument()
         doc.setHtml(html)
 
@@ -181,7 +190,8 @@ class GlobalSearchDialog(QDialog):
                 "</div>" + html
             )
 
-        CONTEXT_LEN = 300
+        # Уменьшил контекст до 60 символов, чтобы сниппеты реже сливались
+        CONTEXT_LEN = 60
         doc_len = max(0, doc.characterCount() - 1)
 
         # Объединение диапазонов
@@ -194,6 +204,7 @@ class GlobalSearchDialog(QDialog):
                 merged_ranges.append([rng_start, rng_end])
             else:
                 last_rng = merged_ranges[-1]
+                # Если перекрытие или касание - объединяем
                 if rng_start <= last_rng[1]:
                     last_rng[1] = max(last_rng[1], rng_end)
                 else:
@@ -215,7 +226,7 @@ class GlobalSearchDialog(QDialog):
 
         debug_info = (
             "<div style='color:#888; font-size:12px; margin:0 0 10px 0; border-bottom:1px solid #ddd; padding-bottom:5px;'>"
-            f"Найдено совпадений: {len(match_positions)}; сниппетов: {len(merged_ranges)}"
+            f"Найдено совпадений: {len(match_positions)}; фрагментов: {len(merged_ranges)}"
             "</div>"
         )
 
@@ -223,9 +234,18 @@ class GlobalSearchDialog(QDialog):
 
     def _clean_qt_html(self, html_fragment):
         """Убирает обертки HTML/BODY из фрагмента, возвращаемого toHtml()"""
+        # Сначала ищем body
         match = re.search(r"<body[^>]*>(.*)</body>", html_fragment, re.DOTALL | re.IGNORECASE)
         if match:
             return match.group(1)
+        
+        # Если body не найдено, пробуем вырезать html теги, если они есть
+        match_html = re.search(r"<html[^>]*>(.*)</html>", html_fragment, re.DOTALL | re.IGNORECASE)
+        if match_html:
+            # Внутри html может быть head и body, но если мы здесь, значит body regex не сработал
+            # Вернем содержимое html
+            return match_html.group(1)
+
         return html_fragment
 
     def _on_search_enter(self):
