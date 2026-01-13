@@ -62,7 +62,11 @@ class GlobalSearchDialog(QDialog):
         self.preview.set_context(self.repo)
         
         # CSS для автоматического масштабирования картинок под ширину окна
-        self.preview.document().setDefaultStyleSheet("img { max-width: 100%; height: auto; }")
+        # Также добавим стиль для маркеров ...
+        self.preview.document().setDefaultStyleSheet("""
+            img { max-width: 100%; height: auto; }
+            .snippet-marker { color: #888; font-size: 16px; font-weight: bold; text-align: center; margin: 5px 0; }
+        """)
         
         splitter.addWidget(self.preview)
 
@@ -120,8 +124,12 @@ class GlobalSearchDialog(QDialog):
             return
 
         # Генерация сниппетов (отрывков с искомым текстом)
-        snippets_html = self._generate_snippets(body_html, query)
-        self.preview.setHtml(snippets_html)
+        try:
+            snippets_html = self._generate_snippets(body_html, query)
+            self.preview.setHtml(snippets_html)
+        except Exception as e:
+            print(f"Error generating snippets: {e}")
+            self.preview.setHtml(body_html)
 
     def _generate_snippets(self, html: str, query: str) -> str:
         """Создает HTML со списком фрагментов. Показывает 300 символов до и после совпадения."""
@@ -152,34 +160,8 @@ class GlobalSearchDialog(QDialog):
         # 2. Формирование сниппетов (300 символов до и после)
         snippets = []
         CONTEXT_LEN = 300
-        doc_len = doc.characterCount()
-        
-        # Чтобы не дублировать пересекающиеся области, будем следить за последней обработанной позицией
-        last_end_pos = -1
-
-        for start_pos, end_pos in match_positions:
-            # Если это совпадение уже попало в предыдущий сниппет, пропускаем или объединяем?
-            # Лучше объединять, если они близко.
-            
-            # Определяем границы контекста
-            snippet_start = max(0, start_pos - CONTEXT_LEN)
-            snippet_end = min(doc_len, end_pos + CONTEXT_LEN)
-            
-            # Если начало текущего сниппета перекрывается с концом предыдущего (или очень близко)
-            # То просто расширяем предыдущий сниппет
-            if snippets and snippet_start <= last_end_pos:
-                # Получаем последний добавленный фрагмент и его границы (нужно хранить)
-                # Упростим: просто создадим новый курсор от (последний end) до (текущий end)
-                # Но это сложно склеить.
-                
-                # Проще: перезаписать последний сниппет, расширив его.
-                # Но у нас уже HTML текст в списке.
-                
-                # Давайте хранить список диапазонов (start, end) для сниппетов, объединять их, а потом генерировать HTML.
-                pass
-            else:
-                # Это новый сниппет? пока просто соберем диапазоны
-                pass
+        # Важно: используем characterCount() - 1, так как последний символ это всегда параграф-сепаратор
+        doc_len = max(0, doc.characterCount() - 1) 
         
         # 2.1 Объединение диапазонов
         merged_ranges = []
@@ -201,17 +183,23 @@ class GlobalSearchDialog(QDialog):
         found_fragments = []
         
         for rng_start, rng_end in merged_ranges:
+            # Двойная проверка границ перед созданием курсора
+            safe_start = max(0, min(rng_start, doc_len))
+            safe_end = max(safe_start, min(rng_end, doc_len))
+            
             cursor = QTextCursor(doc)
-            cursor.setPosition(rng_start)
-            cursor.setPosition(rng_end, QTextCursor.KeepAnchor)
+            cursor.setPosition(safe_start)
+            # Если позиции совпадают, selection будет пустой, но ошибки быть не должно
+            if safe_end > safe_start:
+                cursor.setPosition(safe_end, QTextCursor.KeepAnchor)
             
             fragment = cursor.selection().toHtml()
             fragment = self._clean_qt_html(fragment)
             
             snippet_html = (
-                f"<div style='color: #888; font-size: 0.9em; text-align: center;'>...</div>"
+                f"<div class='snippet-marker'>...</div>"
                 f"<div style='margin: 10px 0;'>{fragment}</div>"
-                f"<div style='color: #888; font-size: 0.9em; text-align: center;'>...</div>"
+                f"<div class='snippet-marker'>...</div>"
             )
             found_fragments.append(snippet_html)
             
