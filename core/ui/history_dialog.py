@@ -19,7 +19,7 @@ class HistoryDialog(QDialog):
         self.repo = repo
         self.main_window = main_window
         self.setWindowTitle("История изменений")
-        self.resize(600, 400)
+        self.resize(650, 400)
         
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
