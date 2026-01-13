@@ -33,6 +33,7 @@ from core.ui.settings_dialog import SettingsDialog
 from core.ui.history_dialog import HistoryDialog
 from core.ui.image_selection_dialog import ImageSelectionDialog
 from core.ui.markdown_view_dialog import MarkdownViewDialog
+from core.ui.search_widget import SearchWidget
 
 
 class MainWindow(
@@ -82,6 +83,11 @@ class MainWindow(
         self.editor.set_context(self.repo)
         self.editor.set_main_window(self)  # Устанавливаем ссылку на главное окно
         self.editor.focusOut.connect(self._on_editor_focus_out)
+
+        # Панель поиска (Ctrl+F)
+        self.search_widget = SearchWidget(self.editor, editor_container)
+        editor_layout.addWidget(self.search_widget)
+
         editor_layout.addWidget(self.editor)
 
         # Применение шрифта
@@ -124,40 +130,48 @@ class MainWindow(
         # Загрузка и восстановление состояния
         self.load_notes_tree()
         self._restore_last_state()
-        
+
         # Применяем начальную тему для path_label
         self._apply_path_label_style()
+
+    def show_search(self):
+        """Открыть панель поиска (Ctrl+F)."""
+        self.search_widget.show_search()
 
     def _apply_path_label_style(self):
         """Применить стиль к breadcrumb-строке в зависимости от текущей темы"""
         theme = self.config.get("theme", "light")
-        
+
         if theme == "dark":
             # Тёмная тема: светло-серый текст (более яркий), тонкая граница снизу
-            self.path_label.setStyleSheet("""
+            self.path_label.setStyleSheet(
+                """
                 QLabel {
                     background-color: #1e1e1e;
                     color: #b0b0b0;
                     font-size: 11px;
                     border-bottom: 1px solid #3e3e42;
                 }
-            """)
+            """
+            )
         else:
             # Светлая тема: серый текст, тонкая граница снизу
-            self.path_label.setStyleSheet("""
+            self.path_label.setStyleSheet(
+                """
                 QLabel {
                     background-color: #f0f0f0;
                     color: #6c6c6c;
                     font-size: 11px;
                     border-bottom: 1px solid #d0d0d0;
                 }
-            """)
+            """
+            )
 
     def _update_status_bar(self, note_id=None):
         """Обновление строки состояния с путем текущей заметки"""
         if note_id is None:
             note_id = self.current_note_id
-        
+
         if note_id:
             path = self.repo.get_note_path(note_id)
             if path:
@@ -171,7 +185,7 @@ class MainWindow(
         """Обновление breadcrumb-строки с путём заметки"""
         if note_id is None:
             note_id = self.current_note_id
-        
+
         if note_id:
             path = self.repo.get_note_path(note_id)
             if path:
@@ -198,24 +212,23 @@ class MainWindow(
         if not self.current_note_id:
             QMessageBox.warning(self, "Ошибка", "Заметка не выбрана.")
             return
-            
+
         editor_path = self.config.get("image_editor_path", "")
         if not editor_path or not os.path.exists(editor_path):
             QMessageBox.warning(
                 self,
                 "Ошибка",
-                "Путь к редактору изображений не настроен.\n"
-                f"Укажите путь в config.json: image_editor_path"
+                "Путь к редактору изображений не настроен.\n" f"Укажите путь в config.json: image_editor_path",
             )
             return
-        
+
         # Получаем список изображений
         images = self.editor.get_images_in_content()
-        
+
         if not images:
             QMessageBox.information(self, "Инфо", "В заметке нет изображений.")
             return
-        
+
         selected_image = None
         if len(images) == 1:
             selected_image = images[0]
@@ -224,26 +237,26 @@ class MainWindow(
             dlg = ImageSelectionDialog(images, self)
             if dlg.exec():
                 selected_image = dlg.selected_image
-        
+
         if not selected_image:
             return
-        
+
         # selected_image = (id, note_id, name, bytes, mime)
         att_id, _, name, img_bytes, mime = selected_image
-        
+
         # Создаем временный файл
-        ext = name.split('.')[-1] if '.' in name else 'png'
+        ext = name.split(".")[-1] if "." in name else "png"
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=f".{ext}")
         temp_file.write(img_bytes)
         temp_file.close()
-        
+
         try:
             # Запускаем редактор
-            if sys.platform == 'win32':
+            if sys.platform == "win32":
                 subprocess.Popen([editor_path, temp_file.name])
             else:
                 subprocess.Popen([editor_path, temp_file.name])
-            
+
             # TODO: Можно добавить отслеживание изменений файла и обновление в базе
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Не удалось открыть редактор: {e}")
@@ -252,10 +265,10 @@ class MainWindow(
         """Переключение между светлой и темной темой (F10)"""
         current_theme = self.config.get("theme", "light")
         new_theme = "dark" if current_theme == "light" else "light"
-        
+
         self.config.set("theme", new_theme)
         ThemeManager.apply_theme(new_theme)
-        
+
         # Обновляем стиль breadcrumb-строки
         self._apply_path_label_style()
 
@@ -263,11 +276,11 @@ class MainWindow(
         """Открытие отдельного окна для просмотра Markdown по F3"""
         if not self.current_note_id:
             return
-        
+
         # Берем чистый текст из редактора (Markdown исходник)
         plain_text = self.editor.toPlainText()
         dlg = MarkdownViewDialog(plain_text, self)
-        dlg.show() # Используем show вместо exec для немодального окна
+        dlg.show()  # Используем show вместо exec для немодального окна
 
     def set_hotkey_controller(self, controller):
         """Установить контроллер глобальных горячих клавиш"""
@@ -300,24 +313,35 @@ class MainWindow(
 
         # 1. Основные команды
         self._bind_shortcut("toggle_focus_shortcut", local_keys.get("toggle_focus", "Alt+W"), self.toggle_focus)
-        self._bind_shortcut("toggle_view_mode_shortcut", local_keys.get("toggle_view_mode", "F3"), self.toggle_view_mode)
+        self._bind_shortcut(
+            "toggle_view_mode_shortcut", local_keys.get("toggle_view_mode", "F3"), self.toggle_view_mode
+        )
         self._bind_shortcut("add_note_shortcut", local_keys.get("add_note", "F4"), self.add_note)
         self._bind_shortcut("del_note_shortcut", local_keys.get("delete_note", "F8"), self.delete_notes)
         self._bind_shortcut("settings_shortcut", local_keys.get("settings", "Ctrl+,"), self.open_settings)
         self._bind_shortcut("quit_shortcut", local_keys.get("quit", "Shift+Esc"), self.quit_app)
 
+        # Поиск в редакторе
+        self._bind_shortcut("find_shortcut", local_keys.get("find", "Ctrl+F"), self.show_search)
+
         # Копирование содержимого заметки
-        self._bind_shortcut("copy_note_shortcut", local_keys.get("copy_note", "Ctrl+C"), self.copy_current_note_to_clipboard)
-        
+        self._bind_shortcut(
+            "copy_note_shortcut", local_keys.get("copy_note", "Ctrl+C"), self.copy_current_note_to_clipboard
+        )
+
         self._bind_shortcut("move_note_shortcut", local_keys.get("move_note", "F6"), self.move_notes)
 
         # Новые функции
-        self._bind_shortcut("add_to_favorites_shortcut", local_keys.get("add_to_favorites", "F5"), self.add_to_favorites)
+        self._bind_shortcut(
+            "add_to_favorites_shortcut", local_keys.get("add_to_favorites", "F5"), self.add_to_favorites
+        )
         self._bind_shortcut("rename_note_shortcut", local_keys.get("rename_note", "F2"), self.rename_note)
         self._bind_shortcut("edit_image_shortcut", local_keys.get("edit_image", "F12"), self.edit_image)
 
         # Переключение между ветками (Текущие/Буфер/Избранное)
-        self._bind_shortcut("toggle_branch_shortcut", local_keys.get("toggle_branch", "Alt+S"), self.toggle_current_clipboard_branch)
+        self._bind_shortcut(
+            "toggle_branch_shortcut", local_keys.get("toggle_branch", "Alt+S"), self.toggle_current_clipboard_branch
+        )
 
         # История изменений
         self._bind_shortcut("history_shortcut", local_keys.get("history", "Alt+D"), self.show_history_dialog)
@@ -326,20 +350,36 @@ class MainWindow(
         self._bind_shortcut("toggle_theme_shortcut", local_keys.get("toggle_theme", "F10"), self.toggle_theme)
 
         # 2. Навигация (когда фокус в редакторе)
-        self._bind_shortcut("nav_up_shortcut", local_keys.get("navigate_up", "Alt+Up"), 
-                           lambda: self._navigate_tree_from_editor("up"))
-        self._bind_shortcut("nav_down_shortcut", local_keys.get("navigate_down", "Alt+Down"), 
-                           lambda: self._navigate_tree_from_editor("down"))
-        self._bind_shortcut("nav_left_shortcut", local_keys.get("navigate_left", "Alt+Left"), 
-                           lambda: self._navigate_tree_from_editor("left"))
-        self._bind_shortcut("nav_right_shortcut", local_keys.get("navigate_right", "Alt+Right"), 
-                           lambda: self._navigate_tree_from_editor("right"))
-        
+        self._bind_shortcut(
+            "nav_up_shortcut", local_keys.get("navigate_up", "Alt+Up"), lambda: self._navigate_tree_from_editor("up")
+        )
+        self._bind_shortcut(
+            "nav_down_shortcut",
+            local_keys.get("navigate_down", "Alt+Down"),
+            lambda: self._navigate_tree_from_editor("down"),
+        )
+        self._bind_shortcut(
+            "nav_left_shortcut",
+            local_keys.get("navigate_left", "Alt+Left"),
+            lambda: self._navigate_tree_from_editor("left"),
+        )
+        self._bind_shortcut(
+            "nav_right_shortcut",
+            local_keys.get("navigate_right", "Alt+Right"),
+            lambda: self._navigate_tree_from_editor("right"),
+        )
+
         # 3. Постраничная навигация
-        self._bind_shortcut("nav_page_up_shortcut", local_keys.get("navigate_page_up", "Alt+PgUp"), 
-                           lambda: self._navigate_tree_from_editor("page_up"))
-        self._bind_shortcut("nav_page_down_shortcut", local_keys.get("navigate_page_down", "Alt+PgDown"), 
-                           lambda: self._navigate_tree_from_editor("page_down"))
+        self._bind_shortcut(
+            "nav_page_up_shortcut",
+            local_keys.get("navigate_page_up", "Alt+PgUp"),
+            lambda: self._navigate_tree_from_editor("page_up"),
+        )
+        self._bind_shortcut(
+            "nav_page_down_shortcut",
+            local_keys.get("navigate_page_down", "Alt+PgDown"),
+            lambda: self._navigate_tree_from_editor("page_down"),
+        )
 
     def _bind_shortcut(self, attr_name, key_sequence, callback):
         """Вспомогательный метод для привязки шортката к атрибуту окна"""
@@ -434,11 +474,7 @@ class MainWindow(
             for att_id, name, img_bytes, mime in attachments:
                 if img_bytes:
                     image = QImage.fromData(img_bytes)
-                    doc.addResource(
-                        QTextDocument.ImageResource,
-                        QUrl(f"noteimg://{att_id}"),
-                        image,
-                    )
+                    doc.addResource(QTextDocument.ImageResource, QUrl(f"noteimg://{att_id}"), image)
 
             self.editor.setHtml(body_html or "")
 
@@ -560,11 +596,7 @@ class MainWindow(
         for att_id, name, img_bytes, mime in attachments:
             if img_bytes:
                 image = QImage.fromData(img_bytes)
-                doc.addResource(
-                    QTextDocument.ImageResource,
-                    QUrl(f"noteimg://{att_id}"),
-                    image,
-                )
+                doc.addResource(QTextDocument.ImageResource, QUrl(f"noteimg://{att_id}"), image)
 
         self.editor.setHtml(body_html or "")
 
