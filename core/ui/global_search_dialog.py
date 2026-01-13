@@ -1,7 +1,7 @@
 import re
 
 from PySide6.QtCore import Qt, QTimer, QRegularExpression
-from PySide6.QtGui import QTextDocument, QTextCursor
+from PySide6.QtGui import QTextDocument, QTextCursor, QTextCharFormat, QColor
 from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
@@ -62,8 +62,6 @@ class GlobalSearchDialog(QDialog):
         self.preview.set_context(self.repo)
         
         # CSS для автоматического масштабирования картинок под ширину окна
-        # max-width: 100% ограничивает ширину картинки шириной контейнера
-        # height: auto сохраняет пропорции
         self.preview.document().setDefaultStyleSheet("img { max-width: 100%; height: auto; }")
         
         splitter.addWidget(self.preview)
@@ -126,16 +124,25 @@ class GlobalSearchDialog(QDialog):
         self.preview.setHtml(snippets_html)
 
     def _generate_snippets(self, html: str, query: str) -> str:
-        """Создает HTML со списком фрагментов, содержащих искомый текст."""
+        """Создает HTML со списком фрагментов, содержащих искомый текст с подсветкой."""
         doc = QTextDocument()
         doc.setHtml(html)
         
-        found_fragments = []
-        
-        # Используем QRegularExpression для case-insensitive поиска
+        # 1. Подсветка всех совпадений (желтый фон)
         escaped_query = re.escape(query)
         regex = QRegularExpression(escaped_query, QRegularExpression.CaseInsensitiveOption)
         
+        highlight_cursor = doc.find(regex)
+        highlight_fmt = QTextCharFormat()
+        highlight_fmt.setBackground(QColor("yellow"))
+        highlight_fmt.setForeground(Qt.black)
+        
+        while not highlight_cursor.isNull():
+            highlight_cursor.mergeCharFormat(highlight_fmt)
+            highlight_cursor = doc.find(regex, highlight_cursor)
+            
+        # 2. Извлечение уникальных блоков с совпадениями
+        found_fragments = []
         cursor = doc.find(regex)
         
         limit = 50 
@@ -143,24 +150,42 @@ class GlobalSearchDialog(QDialog):
         seen_blocks = set()
 
         while not cursor.isNull() and count < limit:
+            # Выделяем блок (абзац) целиком
             cursor.select(QTextCursor.BlockUnderCursor)
             block_num = cursor.blockNumber()
             
             if block_num not in seen_blocks:
+                # Получаем HTML фрагмент (с уже примененной подсветкой)
                 fragment = cursor.selection().toHtml()
-                found_fragments.append(fragment)
+                
+                # Очищаем от лишних тегов (body, html), оставляем суть
+                fragment = self._clean_qt_html(fragment)
+                
+                # Добавляем маркеры "..." и стилизацию
+                snippet_html = (
+                    f"<div style='color: #888; font-size: 0.9em;'>...</div>"
+                    f"<div style='margin: 5px 0;'>{fragment}</div>"
+                    f"<div style='color: #888; font-size: 0.9em;'>...</div>"
+                )
+                
+                found_fragments.append(snippet_html)
                 seen_blocks.add(block_num)
                 count += 1
             
             cursor = doc.find(regex, cursor)
 
-        # Если в тексте не нашли совпадений (значит совпало в заголовке),
-        # показываем всю заметку целиком, чтобы пользователь видел содержимое (в т.ч. картинки).
         if not found_fragments:
             return html
 
         # Собираем фрагменты через разделитель
-        return "<hr style='border: 0; border-top: 1px solid #ccc; margin: 10px 0;'>".join(found_fragments)
+        return "<hr style='border: 0; border-top: 1px solid #ccc; margin: 20px 0;'>".join(found_fragments)
+
+    def _clean_qt_html(self, html_fragment):
+        """Убирает обертки HTML/BODY из фрагмента, возвращаемого toHtml()"""
+        match = re.search(r"<body[^>]*>(.*)</body>", html_fragment, re.DOTALL | re.IGNORECASE)
+        if match:
+            return match.group(1)
+        return html_fragment
 
     def _on_search_enter(self):
         """Перенос фокуса в список при нажатии Enter в строке поиска."""
