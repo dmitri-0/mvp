@@ -34,6 +34,7 @@ from core.ui.history_dialog import HistoryDialog
 from core.ui.image_selection_dialog import ImageSelectionDialog
 from core.ui.markdown_view_dialog import MarkdownViewDialog
 from core.ui.search_widget import SearchWidget
+from core.ui.global_search_dialog import GlobalSearchDialog
 
 
 class MainWindow(
@@ -139,6 +140,16 @@ class MainWindow(
     def show_search(self):
         """Открыть панель поиска (Ctrl+F)."""
         self.search_widget.show_search()
+
+    def show_global_search_dialog(self):
+        """Глобальный поиск по базе (заголовок и тело)."""
+
+        def _open_note(note_id: int):
+            # Метод _select_note_by_id уже используется в коде (см. комментарии) и есть в миксинах.
+            self._select_note_by_id(note_id)
+
+        dlg = GlobalSearchDialog(self.repo, self, on_open_note=_open_note)
+        dlg.exec()
 
     def _apply_path_label_style(self):
         """Применить стиль к breadcrumb-строке в зависимости от текущей темы"""
@@ -326,6 +337,11 @@ class MainWindow(
 
         # Поиск в редакторе
         self._bind_shortcut("find_shortcut", local_keys.get("find", "Ctrl+F"), self.show_search)
+
+        # Глобальный поиск по базе
+        self._bind_shortcut(
+            "global_search_shortcut", local_keys.get("global_search", "Ctrl+Shift+F"), self.show_global_search_dialog
+        )
 
         # Копирование содержимого заметки
         self._bind_shortcut(

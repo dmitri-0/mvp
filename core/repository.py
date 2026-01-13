@@ -152,6 +152,29 @@ class NoteRepository:
             cursor.execute("SELECT id, parent_id, title FROM notes WHERE title=? AND parent_id=?", (title, parent_id))
         return cursor.fetchone()
 
+    def search_notes(self, query: str, limit: int = 200):
+        """Глобальный поиск по базе (заголовок + тело).
+
+        Возвращает список строк: (id, title, body_html, updated_at)
+        """
+        q = (query or "").strip()
+        if not q:
+            return []
+
+        like = f"%{q}%"
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT id, title, body_html, updated_at
+            FROM notes
+            WHERE (title LIKE ? OR body_html LIKE ?)
+            ORDER BY updated_at DESC
+            LIMIT ?
+            """,
+            (like, like, int(limit)),
+        )
+        return cursor.fetchall()
+
     def get_attachments(self, note_id):
         """Получить вложения заметки (id, name, bytes, mime)"""
         cursor = self.conn.cursor()
