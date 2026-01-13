@@ -41,6 +41,40 @@ class NoteEditor(QTextEdit):
         super().focusOutEvent(event)
         self.focusOut.emit()
 
+    def loadResource(self, resource_type, url):
+        """
+        Ленивая загрузка ресурсов изображений из БД.
+        Вызывается QTextDocument автоматически при рендеринге HTML,
+        если ресурс не был предварительно зарегистрирован через addResource().
+        """
+        # Обрабатываем только изображения с noteimg:// схемой
+        if resource_type == QTextDocument.ImageResource and url.scheme() == "noteimg":
+            if not self.repo:
+                return super().loadResource(resource_type, url)
+            
+            # Извлекаем ID вложения из URL
+            att_id = self._parse_id_from_name(url.toString())
+            if not att_id:
+                return super().loadResource(resource_type, url)
+            
+            try:
+                # Загружаем вложение из БД
+                att_data = self.repo.get_attachment(att_id)
+                if att_data:
+                    _, _, name, img_bytes, mime = att_data
+                    if img_bytes:
+                        # Создаём QImage из байтов
+                        image = QImage.fromData(img_bytes)
+                        if not image.isNull():
+                            # Регистрируем ресурс в документе для последующего использования
+                            self.document().addResource(QTextDocument.ImageResource, url, image)
+                            return image
+            except Exception as e:
+                print(f"Error loading image resource {url.toString()}: {e}")
+        
+        # Для остальных типов ресурсов используем стандартное поведение
+        return super().loadResource(resource_type, url)
+
     def _is_clipboard_note(self):
         """Проверить, является ли текущая заметка из ветки 'Буфер обмена'"""
         if not self.repo or not self.current_note_id:
