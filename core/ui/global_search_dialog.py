@@ -27,7 +27,7 @@ class GlobalSearchDialog(QDialog):
         self.repo = repo
         self.on_open_note = on_open_note
         self.setWindowTitle("Глобальный поиск")
-        self.resize(1000, 600)
+        self.resize(1200, 700)
 
         self._debounce_timer = QTimer(self)
         self._debounce_timer.setSingleShot(True)
@@ -80,7 +80,7 @@ class GlobalSearchDialog(QDialog):
         self.preview.set_context(self.repo)
         splitter.addWidget(self.preview)
 
-        splitter.setSizes([350, 650])
+        splitter.setSizes([400, 800])
 
         self.hint_lbl = QLabel("Enter/двойной клик — открыть заметку, Esc — закрыть")
         root.addWidget(self.hint_lbl)
@@ -277,8 +277,8 @@ class GlobalSearchDialog(QDialog):
             # padding: 5px 10px; - уменьшаем вертикальный padding внутри блока
             found_fragments.append(
                 divider_html
-                + f"<div style='padding: 5px 10px; background: {card_bg}; font-family: sans-serif;'>"
-                + f"<div style='font-size: 13px; line-height: 1.2;'>{snippet_html}</div>"
+                + f"<div style='padding: 5px 10px; background: {card_bg}; font-family: JetBrains Mono;'>"
+                + f"<div style='font-size: 15px; line-height: 1.2;'>{snippet_html}</div>"
                 + "</div>"
             )
 
