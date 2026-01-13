@@ -107,11 +107,13 @@ class GlobalSearchDialog(QDialog):
 
         # Важно: setDefaultStyleSheet задаёт CSS по умолчанию для HTML в QTextDocument.
         # Если его не задать, QTextEdit в тёмной теме может остаться с чёрным текстом по умолчанию.
+        # Убираем отступы у параграфов для более компактного вида
         self.preview.document().setDefaultStyleSheet(
             "\n".join(
                 [
-                    f"body {{ color: {text}; background-color: {base}; }}",
+                    f"body {{ color: {text}; background-color: {base}; margin: 0; padding: 0; }}",
                     f"a {{ color: {link}; }}",
+                    "p { margin: 0; padding: 0; }",
                     "img { max-width: 100%; height: auto; }",
                 ]
             )
@@ -268,18 +270,20 @@ class GlobalSearchDialog(QDialog):
             # Разделитель между фрагментами (вместо "Фрагмент #")
             divider_html = ""
             if i > 0:
-                divider_html = f"<hr style='border: 0; border-top: 1px solid {border}; margin: 12px 0;'>"
+                # margin: 0; padding: 0; - убираем отступы вокруг черты
+                divider_html = f"<hr style='border: 0; border-top: 1px solid {border}; margin: 0; padding: 0;'>"
 
             # Оборачиваем в блок (цвета берём из текущей палитры, чтобы работало в тёмной теме)
+            # padding: 5px 10px; - уменьшаем вертикальный padding внутри блока
             found_fragments.append(
                 divider_html
-                + f"<div style='padding: 10px; background: {card_bg}; font-family: sans-serif;'>"
-                + f"<div style='font-size: 13px; line-height: 1.4;'>{snippet_html}</div>"
+                + f"<div style='padding: 5px 10px; background: {card_bg}; font-family: sans-serif;'>"
+                + f"<div style='font-size: 13px; line-height: 1.2;'>{snippet_html}</div>"
                 + "</div>"
             )
 
         header = (
-            f"<div style='color:{muted}; font-size:12px; margin:0 0 10px 0; "
+            f"<div style='color:{muted}; font-size:12px; margin:0 0 5px 0; "
             f"border-bottom:1px solid {border}; padding-bottom:5px;'>"
             f"Найдено совпадений: {len(match_positions)}"
             "</div>"
