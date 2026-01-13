@@ -62,10 +62,8 @@ class GlobalSearchDialog(QDialog):
         self.preview.set_context(self.repo)
         
         # CSS для автоматического масштабирования картинок под ширину окна
-        # Также добавим стиль для маркеров ...
         self.preview.document().setDefaultStyleSheet("""
             img { max-width: 100%; height: auto; }
-            .snippet-marker { color: #888; font-size: 16px; font-weight: bold; text-align: center; margin: 5px 0; }
         """)
         
         splitter.addWidget(self.preview)
@@ -158,7 +156,6 @@ class GlobalSearchDialog(QDialog):
             return html
 
         # 2. Формирование сниппетов (300 символов до и после)
-        snippets = []
         CONTEXT_LEN = 300
         # Важно: используем characterCount() - 1, так как последний символ это всегда параграф-сепаратор
         doc_len = max(0, doc.characterCount() - 1) 
@@ -196,11 +193,8 @@ class GlobalSearchDialog(QDialog):
             fragment = cursor.selection().toHtml()
             fragment = self._clean_qt_html(fragment)
             
-            snippet_html = (
-                f"<div class='snippet-marker'>...</div>"
-                f"<div style='margin: 10px 0;'>{fragment}</div>"
-                f"<div class='snippet-marker'>...</div>"
-            )
+            # Просто фрагмент без маркеров ...
+            snippet_html = f"<div style='margin: 10px 0;'>{fragment}</div>"
             found_fragments.append(snippet_html)
             
         return "<hr style='border: 0; border-top: 2px solid #ccc; margin: 20px 0;'>".join(found_fragments)
