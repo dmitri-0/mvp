@@ -3,6 +3,7 @@ __pycache__/
 *.py[codz]
 *$py.class
 notes.db
+output/
 
 # C extensions
 *.so
