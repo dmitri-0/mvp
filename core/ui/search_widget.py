@@ -1,12 +1,13 @@
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QLineEdit, QToolButton
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QKeySequence, QShortcut, QTextDocument
+from PySide6.QtGui import QKeySequence, QShortcut, QTextDocument, QTextCursor
 
 
 class SearchWidget(QWidget):
     def __init__(self, editor, parent=None):
         super().__init__(parent)
         self.editor = editor
+        self.current_theme = "light"  # Default theme
         self.setup_ui()
         self.hide()
 
@@ -44,31 +45,8 @@ class SearchWidget(QWidget):
         self.btn_next.clicked.connect(self.find_next)
         layout.addWidget(self.btn_next)
 
-        # Стиль
-        self.setStyleSheet(
-            """
-            SearchWidget {
-                background-color: #f5f5f5;
-                border-bottom: 1px solid #ddd;
-            }
-            QLineEdit {
-                border: 1px solid #ccc;
-                border-radius: 4px;
-                padding: 4px;
-                background: white;
-            }
-            QToolButton {
-                border: 1px solid transparent;
-                border-radius: 4px;
-                padding: 4px;
-                background: transparent;
-            }
-            QToolButton:hover {
-                background-color: #e0e0e0;
-                border: 1px solid #ccc;
-            }
-        """
-        )
+        # Применяем дефолтную тему
+        self.update_theme("light")
 
         # Шорткат Esc для закрытия
         self.shortcut_esc = QShortcut(QKeySequence(Qt.Key_Escape), self.search_input)
@@ -77,6 +55,71 @@ class SearchWidget(QWidget):
         # Shift+Enter для поиска назад (если фокус в поле ввода)
         self.shortcut_prev = QShortcut(QKeySequence("Shift+Return"), self.search_input)
         self.shortcut_prev.activated.connect(self.find_prev)
+
+    def update_theme(self, theme_name):
+        """Обновить стили виджета в зависимости от темы"""
+        self.current_theme = theme_name
+        
+        if theme_name == "dark":
+            # Темная тема
+            self.setStyleSheet("""
+                SearchWidget {
+                    background-color: #252526;
+                    border-bottom: 1px solid #3e3e42;
+                }
+                QToolButton {
+                    color: #d4d4d4;
+                    border: 1px solid transparent;
+                    border-radius: 4px;
+                    padding: 4px;
+                    background: transparent;
+                }
+                QToolButton:hover {
+                    background-color: #3e3e42;
+                    border: 1px solid #505050;
+                }
+            """)
+            self.search_input.setStyleSheet("""
+                QLineEdit {
+                    background-color: #3c3c3c;
+                    color: #d4d4d4;
+                    border: 1px solid #3e3e42;
+                    border-radius: 4px;
+                    padding: 4px;
+                }
+            """)
+            # Кнопка закрытия должна быть видна
+            self.btn_close.setStyleSheet("border: none; background: transparent; font-weight: bold; color: #d4d4d4;")
+            
+        else:
+            # Светлая тема
+            self.setStyleSheet("""
+                SearchWidget {
+                    background-color: #f5f5f5;
+                    border-bottom: 1px solid #ddd;
+                }
+                QToolButton {
+                    color: black;
+                    border: 1px solid transparent;
+                    border-radius: 4px;
+                    padding: 4px;
+                    background: transparent;
+                }
+                QToolButton:hover {
+                    background-color: #e0e0e0;
+                    border: 1px solid #ccc;
+                }
+            """)
+            self.search_input.setStyleSheet("""
+                QLineEdit {
+                    background-color: white;
+                    color: black;
+                    border: 1px solid #ccc;
+                    border-radius: 4px;
+                    padding: 4px;
+                }
+            """)
+            self.btn_close.setStyleSheet("border: none; background: transparent; font-weight: bold; color: black;")
 
     def show_search(self):
         self.show()
@@ -106,7 +149,7 @@ class SearchWidget(QWidget):
         # Если не нашли - пробуем с начала
         if not found:
             cursor = self.editor.textCursor()
-            cursor.movePosition(QTextDocument.Start)
+            cursor.movePosition(QTextCursor.Start)
             self.editor.setTextCursor(cursor)
             found = self.editor.find(text)
 
@@ -123,7 +166,7 @@ class SearchWidget(QWidget):
         # Если не нашли - пробуем с конца
         if not found:
             cursor = self.editor.textCursor()
-            cursor.movePosition(QTextDocument.End)
+            cursor.movePosition(QTextCursor.End)
             self.editor.setTextCursor(cursor)
             found = self.editor.find(text, QTextDocument.FindBackward)
 
@@ -131,20 +174,46 @@ class SearchWidget(QWidget):
 
     def _update_style(self, found):
         if found:
-            self.search_input.setStyleSheet(
-                """
-                border: 1px solid #ccc;
-                border-radius: 4px;
-                padding: 4px;
-                background: white;
-            """
-            )
+            # Восстанавливаем стандартный стиль для текущей темы
+            if self.current_theme == "dark":
+                self.search_input.setStyleSheet("""
+                    QLineEdit {
+                        background-color: #3c3c3c;
+                        color: #d4d4d4;
+                        border: 1px solid #3e3e42;
+                        border-radius: 4px;
+                        padding: 4px;
+                    }
+                """)
+            else:
+                self.search_input.setStyleSheet("""
+                    QLineEdit {
+                        background-color: white;
+                        color: black;
+                        border: 1px solid #ccc;
+                        border-radius: 4px;
+                        padding: 4px;
+                    }
+                """)
         else:
-            self.search_input.setStyleSheet(
-                """
-                border: 1px solid #ff9999;
-                border-radius: 4px;
-                padding: 4px;
-                background: #fff0f0;
-            """
-            )
+            # Стиль "Не найдено"
+            if self.current_theme == "dark":
+                self.search_input.setStyleSheet("""
+                    QLineEdit {
+                        background-color: #5a1d1d;
+                        color: #d4d4d4;
+                        border: 1px solid #be1100;
+                        border-radius: 4px;
+                        padding: 4px;
+                    }
+                """)
+            else:
+                self.search_input.setStyleSheet("""
+                    QLineEdit {
+                        background-color: #fff0f0;
+                        color: black;
+                        border: 1px solid #ff9999;
+                        border-radius: 4px;
+                        padding: 4px;
+                    }
+                """)
