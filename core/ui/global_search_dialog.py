@@ -154,34 +154,23 @@ class GlobalSearchDialog(QDialog):
         highlight_fmt.setForeground(Qt.black)
 
         match_positions = []
-        pos = 0
-
-        # Поиск всех совпадений через позицию (int)
-        # Защита от зависания
-        MAX_ITERATIONS = 1000
-        iteration = 0
-
-        while iteration < MAX_ITERATIONS:
-            cursor = doc.find(regex, pos)
+        
+        # 1. Находим все вхождения последовательно
+        cursor = QTextCursor(doc)
+        cursor.setPosition(0)
+        
+        while True:
+            # Поиск следующего вхождения начиная с текущей позиции курсора
+            cursor = doc.find(regex, cursor)
             
-            # Если курсор недействителен (ничего не найдено)
             if cursor.isNull():
                 break
                 
-            # Если найдено совпадение "назад" или на том же месте (защита от зацикливания)
-            # cursor.selectionEnd() возвращает абсолютную позицию конца выделения
-            if cursor.selectionEnd() <= pos:
-                # Пытаемся сдвинуться на 1 символ вперед
-                pos += 1
-                if pos >= doc.characterCount():
-                    break
-                continue
-
+            # Подсвечиваем найденное
             cursor.mergeCharFormat(highlight_fmt)
-            match_positions.append((cursor.selectionStart(), cursor.selectionEnd()))
             
-            pos = cursor.selectionEnd()
-            iteration += 1
+            # Сохраняем позиции
+            match_positions.append((cursor.selectionStart(), cursor.selectionEnd()))
 
         if not match_positions:
             return (
@@ -190,47 +179,33 @@ class GlobalSearchDialog(QDialog):
                 "</div>" + html
             )
 
-        # Уменьшил контекст до 60 символов, чтобы сниппеты реже сливались
+        # 2. Формируем список фрагментов без объединения
         CONTEXT_LEN = 60
         doc_len = max(0, doc.characterCount() - 1)
-
-        # Объединение диапазонов
-        merged_ranges = []
-        for start_pos, end_pos in match_positions:
-            rng_start = max(0, start_pos - CONTEXT_LEN)
-            rng_end = min(doc_len, end_pos + CONTEXT_LEN)
-
-            if not merged_ranges:
-                merged_ranges.append([rng_start, rng_end])
-            else:
-                last_rng = merged_ranges[-1]
-                # Если перекрытие или касание - объединяем
-                if rng_start <= last_rng[1]:
-                    last_rng[1] = max(last_rng[1], rng_end)
-                else:
-                    merged_ranges.append([rng_start, rng_end])
-
+        
         found_fragments = []
-        for rng_start, rng_end in merged_ranges:
-            safe_start = max(0, min(rng_start, doc_len))
-            safe_end = max(safe_start, min(rng_end, doc_len))
-
-            cursor = QTextCursor(doc)
-            cursor.setPosition(safe_start)
-            if safe_end > safe_start:
-                cursor.setPosition(safe_end, QTextCursor.KeepAnchor)
-
-            fragment = cursor.selection().toHtml()
+        
+        for start, end in match_positions:
+            frag_start = max(0, start - CONTEXT_LEN)
+            frag_end = min(doc_len, end + CONTEXT_LEN)
+            
+            extract_cursor = QTextCursor(doc)
+            extract_cursor.setPosition(frag_start)
+            if frag_end > frag_start:
+                extract_cursor.setPosition(frag_end, QTextCursor.KeepAnchor)
+            
+            fragment = extract_cursor.selection().toHtml()
             fragment = self._clean_qt_html(fragment)
-            found_fragments.append(f"<div style='margin: 10px 0;'>{fragment}</div>")
+            
+            found_fragments.append(f"<div style='margin: 10px 0; border-left: 2px solid #ddd; padding-left: 10px;'>{fragment}</div>")
 
         debug_info = (
             "<div style='color:#888; font-size:12px; margin:0 0 10px 0; border-bottom:1px solid #ddd; padding-bottom:5px;'>"
-            f"Найдено совпадений: {len(match_positions)}; фрагментов: {len(merged_ranges)}"
+            f"Найдено совпадений: {len(match_positions)}"
             "</div>"
         )
 
-        return debug_info + "<hr style='border: 0; border-top: 2px solid #ccc; margin: 20px 0;'>".join(found_fragments)
+        return debug_info + "<hr style='border: 0; border-top: 1px solid #eee; margin: 10px 0;'>".join(found_fragments)
 
     def _clean_qt_html(self, html_fragment):
         """Убирает обертки HTML/BODY из фрагмента, возвращаемого toHtml()"""
