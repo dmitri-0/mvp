@@ -80,7 +80,8 @@ class MoveNoteDialog(QDialog):
             
             item = items_map[note_id]
             if parent_id is None or parent_id not in items_map:
-                root_items.append(item)
+                if title != 'Буфер обмена':
+                    root_items.append(item)
             else:
                 items_map[parent_id].addChild(item)
 
