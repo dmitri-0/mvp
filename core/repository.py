@@ -66,7 +66,17 @@ class NoteRepository:
     def get_all_notes(self):
         """Получить все заметки (id, parent_id, title, body_html, cursor_position, updated_at)"""
         cursor = self.conn.cursor()
-        cursor.execute("SELECT id, parent_id, title, body_html, cursor_position, updated_at FROM notes ORDER BY id")
+        cursor.execute(
+            """
+            SELECT id, parent_id, title, body_html, cursor_position, updated_at
+            FROM notes
+            ORDER BY
+                (parent_id IS NULL) DESC,
+                CASE WHEN parent_id IS NULL THEN title END ASC,
+                parent_id,
+                id DESC
+            """
+        )
         return cursor.fetchall()
 
     def get_note(self, note_id: int):
@@ -81,32 +91,38 @@ class NoteRepository:
     def save_note(self, note_id, title, body_html, cursor_pos=0):
         """Сохранить изменения в заметке"""
         cursor = self.conn.cursor()
-        
+
         # Сначала проверяем, изменилось ли что-нибудь
         cursor.execute("SELECT title, body_html, cursor_position FROM notes WHERE id=?", (note_id,))
         row = cursor.fetchone()
-        
+
         if row:
             current_title, current_body, current_pos = row
             # Обработка None значений
             current_body = current_body or ""
             current_pos = current_pos or 0
-            
+
             # Если ничего не изменилось, просто выходим
             if current_title == title and current_body == body_html and current_pos == cursor_pos:
                 return
 
-        cursor.execute("""
+        cursor.execute(
+            """
             UPDATE notes SET title=?, body_html=?, cursor_position=?, updated_at=? WHERE id=?
-        """, (title, body_html, cursor_pos, datetime.now().isoformat(sep=" "), note_id))
+        """,
+            (title, body_html, cursor_pos, datetime.now().isoformat(sep=" "), note_id),
+        )
         self.conn.commit()
 
     def create_note(self, parent_id, title):
         """Создать новую заметку"""
         cursor = self.conn.cursor()
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO notes(parent_id, title, body_html) VALUES (?, ?, '')
-        """, (parent_id, title))
+        """,
+            (parent_id, title),
+        )
         self.conn.commit()
         return cursor.lastrowid
 
@@ -119,9 +135,12 @@ class NoteRepository:
     def move_note(self, note_id, new_parent_id):
         """Переместить заметку к новому родителю"""
         cursor = self.conn.cursor()
-        cursor.execute("""
+        cursor.execute(
+            """
             UPDATE notes SET parent_id=?, updated_at=? WHERE id=?
-        """, (new_parent_id, datetime.now().isoformat(sep=" "), note_id))
+        """,
+            (new_parent_id, datetime.now().isoformat(sep=" "), note_id),
+        )
         self.conn.commit()
 
     def get_note_by_title(self, title, parent_id=None):
@@ -148,9 +167,12 @@ class NoteRepository:
     def add_attachment(self, note_id, name, image_bytes, mime):
         """Добавить вложение к заметке"""
         cursor = self.conn.cursor()
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO attachments(note_id, kind, name, bytes, mime) VALUES (?, 'image', ?, ?, ?)
-        """, (note_id, name, image_bytes, mime))
+        """,
+            (note_id, name, image_bytes, mime),
+        )
         self.conn.commit()
         return cursor.lastrowid
 
@@ -188,12 +210,15 @@ class NoteRepository:
         """
         cursor.execute(query, (root_id,))
         row = cursor.fetchone()
-        
+
         # Если внуков нет, ищем среди детей
         if not row:
-            cursor.execute("SELECT id, parent_id, title, body_html FROM notes WHERE parent_id=? ORDER BY id DESC LIMIT 1", (root_id,))
+            cursor.execute(
+                "SELECT id, parent_id, title, body_html FROM notes WHERE parent_id=? ORDER BY id DESC LIMIT 1",
+                (root_id,),
+            )
             row = cursor.fetchone()
-            
+
         return row
 
     def is_clipboard_note(self, note_id):
@@ -203,30 +228,30 @@ class NoteRepository:
         """
         if not note_id:
             return False
-            
+
         cursor = self.conn.cursor()
         current_id = note_id
-        
+
         # Максимум 10 уровней вглубь для защиты от циклов
         for _ in range(10):
             cursor.execute("SELECT id, parent_id, title FROM notes WHERE id=?", (current_id,))
             row = cursor.fetchone()
-            
+
             if not row:
                 return False
-                
+
             nid, parent_id, title = row
-            
+
             # Если нашли корневой узел "Буфер обмена"
             if title == "Буфер обмена" and parent_id is None:
                 return True
-            
+
             # Если дошли до корня дерева, но это не "Буфер обмена"
             if parent_id is None:
                 return False
-                
+
             current_id = parent_id
-            
+
         return False
 
     def get_root_branch_name(self, note_id):
@@ -236,26 +261,26 @@ class NoteRepository:
         """
         if not note_id:
             return None
-            
+
         cursor = self.conn.cursor()
         current_id = note_id
-        
+
         # Максимум 10 уровней вглубь для защиты от циклов
         for _ in range(10):
             cursor.execute("SELECT id, parent_id, title FROM notes WHERE id=?", (current_id,))
             row = cursor.fetchone()
-            
+
             if not row:
                 return None
-                
+
             nid, parent_id, title = row
-            
+
             # Если дошли до корня дерева, возвращаем его название
             if parent_id is None:
                 return title
-                
+
             current_id = parent_id
-            
+
         return None
 
     def get_note_path(self, note_id):
@@ -265,28 +290,28 @@ class NoteRepository:
         """
         if not note_id:
             return None
-            
+
         cursor = self.conn.cursor()
         path_parts = []
         current_id = note_id
-        
+
         # Максимум 20 уровней вглубь для защиты от циклов
         for _ in range(20):
             cursor.execute("SELECT id, parent_id, title FROM notes WHERE id=?", (current_id,))
             row = cursor.fetchone()
-            
+
             if not row:
                 break
-                
+
             nid, parent_id, title = row
             path_parts.append(title)
-            
+
             # Если дошли до корня дерева
             if parent_id is None:
                 break
-                
+
             current_id = parent_id
-        
+
         # Разворачиваем список (так как шли от заметки к корню)
         path_parts.reverse()
         return " / ".join(path_parts) if path_parts else None
@@ -298,23 +323,23 @@ class NoteRepository:
     def get_recently_updated_notes(self, limit=50):
         """Получить список недавно измененных заметок (id, title, updated_at)"""
         cursor = self.conn.cursor()
-        
+
         # Получаем метку времени очистки истории
         cleared_at = self.get_state("history_cleared_at")
-        
+
         query = """
             SELECT id, title, updated_at 
             FROM notes 
             WHERE title IS NOT NULL
         """
         params = []
-        
+
         if cleared_at:
             query += " AND updated_at > ?"
             params.append(cleared_at)
-            
+
         query += " ORDER BY updated_at DESC LIMIT ?"
         params.append(limit)
-        
+
         cursor.execute(query, tuple(params))
         return cursor.fetchall()
