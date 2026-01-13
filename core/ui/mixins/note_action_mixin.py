@@ -1,10 +1,50 @@
 from datetime import datetime
+import re
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QMessageBox, QInputDialog
 
 
 class NoteActionMixin:
     """Миксин: действия над заметками (добавление, удаление, перемещение)"""
+
+    def _clone_attachments_and_rewrite_html(self, source_note_ids, target_note_id, html: str) -> str:
+        """Клонировать вложения (attachments) из исходных заметок в целевую и переписать ссылки noteimg://.
+
+        Это нужно для сценария: F4 (копия из ветки "Буфер обмена" в "Текущие") без "битых" картинок
+        после удаления заметок из "Буфера".
+        """
+        if not html or not source_note_ids or not target_note_id:
+            return html
+
+        id_map = {}
+
+        # Копируем ВСЕ вложения из исходных заметок в новую заметку
+        for src_note_id in source_note_ids:
+            if not src_note_id:
+                continue
+            try:
+                attachments = self.repo.get_attachments(src_note_id)
+            except Exception:
+                attachments = []
+
+            for att_id, name, img_bytes, mime in attachments:
+                if not img_bytes:
+                    continue
+
+                safe_name = name or "image.png"
+                safe_mime = mime or "image/png"
+                new_att_id = self.repo.add_attachment(target_note_id, safe_name, img_bytes, safe_mime)
+                id_map[int(att_id)] = int(new_att_id)
+
+        if not id_map:
+            return html
+
+        def _repl(match):
+            old_id = int(match.group(1))
+            new_id = id_map.get(old_id)
+            return f"noteimg://{new_id}" if new_id else match.group(0)
+
+        return re.sub(r"noteimg://(\d+)", _repl, html)
 
     def add_note(self):
         """Добавление новой заметки. 
@@ -13,45 +53,47 @@ class NoteActionMixin:
         self.save_current_note()
 
         content_to_copy = ""
+        source_note_ids = []
+
         current_item = self.tree_notes.currentItem()
-        
+
         # Получаем список выделенных элементов
         selected_items = self.tree_notes.selectedItems()
 
         # Проверяем, находимся ли мы в ветке "Буфер обмена"
         # Достаточно проверить ветку текущего (фокусного) элемента
-        if current_item and hasattr(self, '_get_root_branch_name'):
+        if current_item and hasattr(self, "_get_root_branch_name"):
             branch = self._get_root_branch_name(current_item)
             if branch == "Буфер обмена":
                 # Если выделено несколько заметок -> собираем контент со всех
                 if len(selected_items) > 1:
                     contents = []
-                    # Сортируем выбранные элементы по порядку в дереве (визуальному), 
-                    # чтобы текст склеивался логично, а не в порядке выделения
-                    # (хотя QTreeWidget.selectedItems() обычно возвращает в порядке выделения или индекса, надежнее отсортировать)
-                    
-                    # Лучше пройтись по всем выбранным
+
                     for item in selected_items:
                         note_id = item.data(0, Qt.UserRole)
-                        if note_id:
-                            # Если это текущая открытая заметка - берем из редактора (там свежее)
-                            if note_id == self.current_note_id:
-                                html = self.editor.toHtml()
-                            else:
-                                # Иначе читаем из базы
-                                row = self.repo.get_note(note_id)
-                                html = row[3] if row and row[3] else ""
-                            
-                            if html:
-                                contents.append(html)
-                    
+                        if not note_id:
+                            continue
+
+                        # Если это текущая открытая заметка - берем из редактора (там свежее)
+                        if note_id == self.current_note_id:
+                            html = self.editor.toHtml()
+                        else:
+                            # Иначе читаем из базы
+                            row = self.repo.get_note(note_id)
+                            html = row[3] if row and row[3] else ""
+
+                        if html:
+                            contents.append(html)
+                            source_note_ids.append(note_id)
+
                     # Объединяем контент. Просто склеиваем HTML.
                     # Можно добавить разделитель <hr> между заметками
                     content_to_copy = "<hr>".join(contents)
 
                 # Если выделена только одна (или фокус на одной без selection)
                 elif self.current_note_id:
-                     content_to_copy = self.editor.toHtml()
+                    content_to_copy = self.editor.toHtml()
+                    source_note_ids = [self.current_note_id]
 
         # 2. Стандартная логика создания (поиск ветки "Текущие" и создание там)
         current_root = self.repo.get_note_by_title("Текущие")
@@ -73,6 +115,9 @@ class NoteActionMixin:
 
         # 3. Если нужно скопировать контент, обновляем созданную заметку
         if content_to_copy:
+            # ВАЖНО: при копировании из "Буфера обмена" нужно продублировать вложения,
+            # иначе после удаления исходной заметки изображения станут "битыми".
+            content_to_copy = self._clone_attachments_and_rewrite_html(source_note_ids, new_note_id, content_to_copy)
             self.repo.save_note(new_note_id, time_str, content_to_copy)
 
         self.load_notes_tree()
@@ -93,7 +138,7 @@ class NoteActionMixin:
         row = self.repo.get_note(self.current_note_id)
         if not row:
             return
-        
+
         _, _, title, body_html, _, _ = row
 
         # Находим или создаем корневую ветку "Избранное"
@@ -105,14 +150,14 @@ class NoteActionMixin:
 
         # Создаем заметку в Избранном с тем же заголовком
         new_note_id = self.repo.create_note(favorites_root_id, title)
-        
+
         # Копируем содержимое
         if body_html:
             self.repo.save_note(new_note_id, title, body_html)
 
         # Перезагружаем дерево чтобы показать новую заметку
         self.load_notes_tree()
-        
+
         # Показываем уведомление
         QMessageBox.information(self, "Избранное", f"Заметка '{title}' добавлена в Избранное")
 
@@ -130,7 +175,7 @@ class NoteActionMixin:
         row = self.repo.get_note(note_id)
         if not row:
             return
-        
+
         _, parent_id, old_title, _, _, _ = row
 
         # Проверяем, что это не корневая заметка
@@ -139,12 +184,7 @@ class NoteActionMixin:
             return
 
         # Диалог для ввода нового имени
-        new_title, ok = QInputDialog.getText(
-            self, 
-            "Переименование заметки", 
-            "Новое название:", 
-            text=old_title
-        )
+        new_title, ok = QInputDialog.getText(self, "Переименование заметки", "Новое название:", text=old_title)
 
         if ok and new_title and new_title != old_title:
             # Сохраняем изменения
@@ -171,28 +211,28 @@ class NoteActionMixin:
         # Проверяем, что все выбранные заметки находятся в "Избранное" или "Текущие"
         allowed_branches = {"Избранное", "Текущие"}
         note_ids = []
-        
+
         for item in selected_items:
             note_id = item.data(0, Qt.UserRole)
             if not note_id:
                 continue
-            
+
             # Проверяем корневую ветку
             branch = self.repo.get_root_branch_name(note_id)
             if branch not in allowed_branches:
                 QMessageBox.warning(
-                    self, 
+                    self,
                     "Перемещение",
-                    f'Перемещение доступно только для заметок в ветках "Избранное" и "Текущие".'
+                    f'Перемещение доступно только для заметок в ветках "Избранное" и "Текущие".',
                 )
                 return
-            
+
             # Проверяем, что это не корневая заметка
             row = self.repo.get_note(note_id)
             if row and row[1] is None:  # parent_id is None
                 QMessageBox.warning(self, "Перемещение", "Корневые ветки нельзя перемещать")
                 return
-            
+
             note_ids.append(note_id)
 
         if not note_ids:
@@ -203,16 +243,17 @@ class NoteActionMixin:
 
         # Открываем диалог выбора родителя
         from core.ui.move_note_dialog import MoveNoteDialog
+
         dialog = MoveNoteDialog(self.repo, note_ids, self)
-        
+
         if dialog.exec() and dialog.selected_parent_id is not None:
             # Перемещаем все выбранные заметки
             for note_id in note_ids:
                 self.repo.move_note(note_id, dialog.selected_parent_id)
-            
+
             # Обновляем дерево
             self.load_notes_tree()
-            
+
             # Выбираем первую перемещенную заметку
             if note_ids:
                 self._expand_path_to_note(note_ids[0])
@@ -225,10 +266,7 @@ class NoteActionMixin:
             return
 
         reply = QMessageBox.question(
-            self,
-            "Удаление заметок",
-            f"Удалить {len(selected_items)} заметок?",
-            QMessageBox.Yes | QMessageBox.No,
+            self, "Удаление заметок", f"Удалить {len(selected_items)} заметок?", QMessageBox.Yes | QMessageBox.No
         )
 
         if reply == QMessageBox.Yes:
