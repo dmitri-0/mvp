@@ -14,6 +14,13 @@ class NoteRepository:
             pass
         self._init_db()
 
+    @staticmethod
+    def _normalize_title(title: str) -> str:
+        """Привести заголовок заметки к строго однострочному виду."""
+        title = title or ""
+        title = " ".join(title.splitlines())
+        return title.strip()
+
     def _init_db(self):
         cursor = self.conn.cursor()
         cursor.execute("""
@@ -92,6 +99,8 @@ class NoteRepository:
         """Сохранить изменения в заметке"""
         cursor = self.conn.cursor()
 
+        title = self._normalize_title(title)
+
         # Сначала проверяем, изменилось ли что-нибудь
         cursor.execute("SELECT title, body_html, cursor_position FROM notes WHERE id=?", (note_id,))
         row = cursor.fetchone()
@@ -117,6 +126,9 @@ class NoteRepository:
     def create_note(self, parent_id, title):
         """Создать новую заметку"""
         cursor = self.conn.cursor()
+
+        title = self._normalize_title(title)
+
         cursor.execute(
             """
             INSERT INTO notes(parent_id, title, body_html) VALUES (?, ?, '')
