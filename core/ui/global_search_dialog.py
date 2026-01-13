@@ -154,23 +154,31 @@ class GlobalSearchDialog(QDialog):
         highlight_fmt.setForeground(Qt.black)
 
         match_positions = []
+        pos = 0
         
-        # 1. Находим все вхождения последовательно
-        cursor = QTextCursor(doc)
-        cursor.setPosition(0)
-        
+        # 1. Находим все вхождения последовательно через int position
+        # Это надежнее, чем поиск через курсор, который может не сдвинуться
         while True:
-            # Поиск следующего вхождения начиная с текущей позиции курсора
-            cursor = doc.find(regex, cursor)
+            cursor = doc.find(regex, pos)
             
             if cursor.isNull():
                 break
                 
+            # Защита от бесконечного цикла, если найдено совпадение "назад" или нулевой длины
+            if cursor.selectionEnd() <= pos:
+                pos += 1
+                if pos >= doc.characterCount():
+                    break
+                continue
+
             # Подсвечиваем найденное
             cursor.mergeCharFormat(highlight_fmt)
             
             # Сохраняем позиции
             match_positions.append((cursor.selectionStart(), cursor.selectionEnd()))
+            
+            # Сдвигаем позицию поиска за конец текущего вхождения
+            pos = cursor.selectionEnd()
 
         if not match_positions:
             return (
