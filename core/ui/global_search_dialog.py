@@ -265,13 +265,17 @@ class GlobalSearchDialog(QDialog):
             # Заменяем переносы строк на <br>, чтобы в браузере выглядело как текст
             snippet_html = snippet_html.replace("\n", "<br>")
 
+            # Разделитель между фрагментами (вместо "Фрагмент #")
+            divider_html = ""
+            if i > 0:
+                divider_html = f"<hr style='border: 0; border-top: 1px solid {border}; margin: 12px 0;'>"
+
             # Оборачиваем в блок (цвета берём из текущей палитры, чтобы работало в тёмной теме)
             found_fragments.append(
-                f"<div style='margin-bottom: 20px; padding: 10px; "
-                f"border: 1px solid {border}; background: {card_bg}; font-family: sans-serif;'>"
-                f"<div style='font-size: 10px; color: {muted}; margin-bottom: 5px;'>Фрагмент #{i+1}</div>"
-                f"<div style='font-size: 13px; line-height: 1.4;'>{snippet_html}</div>"
-                "</div>"
+                divider_html
+                + f"<div style='padding: 10px; background: {card_bg}; font-family: sans-serif;'>"
+                + f"<div style='font-size: 13px; line-height: 1.4;'>{snippet_html}</div>"
+                + "</div>"
             )
 
         header = (
