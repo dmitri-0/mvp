@@ -1,4 +1,5 @@
 import re
+import traceback
 
 from PySide6.QtCore import Qt, QTimer, QRegularExpression
 from PySide6.QtGui import QTextDocument, QTextCursor, QTextCharFormat, QColor
@@ -126,8 +127,10 @@ class GlobalSearchDialog(QDialog):
             snippets_html = self._generate_snippets(body_html, query)
             self.preview.setHtml(snippets_html)
         except Exception as e:
+            # Отображаем ошибку прямо в окне предпросмотра для отладки
+            err_msg = f"<div style='color:red; font-weight:bold;'>Error generating snippets:<br>{e}<br><pre>{traceback.format_exc()}</pre></div><hr>"
+            self.preview.setHtml(err_msg + body_html)
             print(f"Error generating snippets: {e}")
-            self.preview.setHtml(body_html)
 
     def _generate_snippets(self, html: str, query: str) -> str:
         """Создает HTML со списком фрагментов. Показывает 300 символов до и после совпадения."""
@@ -145,23 +148,35 @@ class GlobalSearchDialog(QDialog):
         pos = 0
 
         # Поиск всех совпадений через позицию (int)
-        while True:
+        # Защита от зависания
+        MAX_ITERATIONS = 1000
+        iteration = 0
+
+        while iteration < MAX_ITERATIONS:
             cursor = doc.find(regex, pos)
+            
+            # Если курсор недействителен (ничего не найдено)
             if cursor.isNull():
                 break
-
+                
+            # Если найдено совпадение "назад" или на том же месте (защита от зацикливания)
+            # cursor.selectionEnd() возвращает абсолютную позицию конца выделения
             if cursor.selectionEnd() <= pos:
+                # Пытаемся сдвинуться на 1 символ вперед
                 pos += 1
+                if pos >= doc.characterCount():
+                    break
                 continue
 
             cursor.mergeCharFormat(highlight_fmt)
             match_positions.append((cursor.selectionStart(), cursor.selectionEnd()))
+            
             pos = cursor.selectionEnd()
+            iteration += 1
 
         if not match_positions:
-            # Диагностика: покажем счетчик
             return (
-                "<div style='color:#888; font-size:12px; margin:0 0 10px 0;'>"
+                "<div style='color:#888; font-size:12px; margin:0 0 10px 0; border-bottom:1px solid #ddd; padding-bottom:5px;'>"
                 "Найдено совпадений: 0 (показан полный текст)"
                 "</div>" + html
             )
@@ -198,13 +213,13 @@ class GlobalSearchDialog(QDialog):
             fragment = self._clean_qt_html(fragment)
             found_fragments.append(f"<div style='margin: 10px 0;'>{fragment}</div>")
 
-        debug = (
-            "<div style='color:#888; font-size:12px; margin:0 0 10px 0;'>"
+        debug_info = (
+            "<div style='color:#888; font-size:12px; margin:0 0 10px 0; border-bottom:1px solid #ddd; padding-bottom:5px;'>"
             f"Найдено совпадений: {len(match_positions)}; сниппетов: {len(merged_ranges)}"
             "</div>"
         )
 
-        return debug + "<hr style='border: 0; border-top: 2px solid #ccc; margin: 20px 0;'>".join(found_fragments)
+        return debug_info + "<hr style='border: 0; border-top: 2px solid #ccc; margin: 20px 0;'>".join(found_fragments)
 
     def _clean_qt_html(self, html_fragment):
         """Убирает обертки HTML/BODY из фрагмента, возвращаемого toHtml()"""
