@@ -2,6 +2,7 @@
 from datetime import datetime
 import re
 import base64
+from html import escape
 from PySide6.QtCore import QObject, Signal, QMimeData
 from PySide6.QtGui import QClipboard, QImage
 from PySide6.QtWidgets import QApplication
@@ -169,7 +170,7 @@ class ClipboardMonitor(QObject):
 
         # 1. Получаем данные
         
-        # Текст: обязательно делаем strip(), чтобы убрать лишние переносы (Сценарий 1)
+        # Текст: обязательно делаем strip(), чтобы убрать лишние переносы
         text_content = ""
         if mime_data.hasText():
             text_content = mime_data.text().strip()
@@ -190,7 +191,7 @@ class ClipboardMonitor(QObject):
                 if image_data:
                     has_raw_image = True
 
-        # HTML: для богатого контента (текст + картинки, Сценарий 2)
+        # HTML: для богатого контента (текст + картинки)
         html_content = ""
         has_html = False
         if mime_data.hasHtml():
@@ -218,46 +219,32 @@ class ClipboardMonitor(QObject):
         saved_something = False
 
         # 3. Логика сохранения
-        
-        # ПРИОРИТЕТ А: HTML контент (Сценарий 2: Текст + Картинка)
-        # Если есть HTML, пробуем извлечь из него картинки и использовать его как основу
+
+        # ПРИОРИТЕТ: Изображения
+        # Если есть HTML, пытаемся извлечь из него картинки
+        html_images_found = False
         if has_html:
             processed_html, extracted_imgs = self._process_html_and_extract_images(time_node_id, html_content)
             
-            # Используем HTML если:
-            # 1. Мы нашли и извлекли картинки (значит это rich text с картинками)
-            # 2. ИЛИ это не просто "голый" текст, который мы бы хотели сохранить как <pre>
-            #    (но определение "просто текста" сложное, поэтому полагаемся на наличие HTML)
-            #    Однако, если пользователь скопировал просто слово в браузере, это будет HTML.
-            #    Если мы хотим сохранить форматирование - сохраняем HTML.
-            
-            # Для Сценария 2 (Текст+Картинка) extracted_imgs будет True.
-            # Для Сценария 1 (Картинка в редакторе -> HTML с base64) extracted_imgs будет True.
-            
-            if extracted_imgs or has_text:
-                final_html_to_save = processed_html
-                saved_something = True
+            if extracted_imgs:
+                # Если найдены картинки в HTML - сохраняем ТОЛЬКО их (игнорируем текст)
+                # Извлекаем src="noteimg://..." из обработанного HTML
+                matcher = re.compile(r'src="(noteimg://[^"]+)"')
+                found_srcs = matcher.findall(processed_html)
+                if found_srcs:
+                    final_html_to_save = "".join([f'<img src="{src}" /><br/>' for src in found_srcs])
+                    saved_something = True
+                    html_images_found = True
 
-        # ПРИОРИТЕТ Б: Raw Image (Сценарий 1: Картинка из файла/скриншота, где может не быть HTML)
-        # Если HTML не обработался или не дал результата, но есть сырая картинка
+        # Если в HTML картинок не было, но есть Raw Image
         if not saved_something and has_raw_image:
             att_id = self.repo.add_attachment(time_node_id, "clipboard_image.png", image_data, "image/png")
-            # Если есть текст, добавляем его перед картинкой
-            if has_text:
-                from html import escape
-                final_html_to_save = (
-                    '<pre style="white-space: pre-wrap; font-family: inherit; margin: 0;">'
-                    f"{escape(text_content)}"
-                    "</pre>"
-                    f'<br/><img src="noteimg://{att_id}" />'
-                )
-            else:
-                final_html_to_save = f'<img src="noteimg://{att_id}" />'
+            final_html_to_save = f'<img src="noteimg://{att_id}" />'
             saved_something = True
 
-        # ПРИОРИТЕТ В: Только текст (если HTML был пустой или мусорный, и нет картинки)
+        # ПРИОРИТЕТ: Текст (только если нет картинок)
         if not saved_something and has_text:
-            from html import escape
+            # Сохраняем как Plain Text, убирая всё форматирование
             final_html_to_save = (
                 '<pre style="white-space: pre-wrap; font-family: inherit; margin: 0;">'
                 f"{escape(text_content)}"
