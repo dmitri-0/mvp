@@ -5,6 +5,7 @@ from PySide6.QtGui import QImage, QTextDocument, QTextCursor, QTextCharFormat, Q
 from PySide6.QtWidgets import QTextEdit, QApplication
 import re
 import base64
+from html import escape
 
 
 class NoteEditor(QTextEdit):
@@ -265,70 +266,102 @@ class NoteEditor(QTextEdit):
     def insertFromMimeData(self, source):
         """Вставка данных из буфера обмена (поддержка изображений, очистка стилей текста)"""
         
-        found_image_tags = []
-
         # ПРИОРИТЕТ 1: Обработка HTML (поддержка noteimg:// и data:base64)
         if source.hasHtml() and self.repo and self.current_note_id:
             html = source.html()
             
-            # A. Обработка noteimg:// (если скопировано внутри старой версии или без конвертации)
-            pattern_noteimg = re.compile(r'src=["\']?noteimg://([0-9\.]+)["\']?')
-            matches_noteimg = pattern_noteimg.findall(html)
+            # Используем временный QTextDocument для парсинга и очистки стилей
+            temp_doc = QTextDocument()
+            temp_doc.setHtml(html)
             
-            processed_ids = set()
-            for raw_id in matches_noteimg:
-                if raw_id in processed_ids: continue
-                processed_ids.add(raw_id)
-                
-                try:
-                    att_id = self._parse_id_from_name(f"noteimg://{raw_id}")
-                    if not att_id: continue
-                    
-                    att_data = self.repo.get_attachment(att_id)
-                    if att_data:
-                        _, _, name, img_bytes, mime = att_data
-                        new_name = f"copy_{name}"
-                        new_att_id = self.repo.add_attachment(self.current_note_id, new_name, img_bytes, mime)
+            final_html_parts = []
+            
+            block = temp_doc.begin()
+            while block.isValid():
+                block_content = []
+                it = block.begin()
+                while not it.atEnd():
+                    fragment = it.fragment()
+                    if fragment.isValid():
+                        char_format = fragment.charFormat()
                         
-                        if img_bytes:
-                            image = QImage.fromData(img_bytes)
-                            url = QUrl(f"noteimg://{new_att_id}")
-                            self.document().addResource(QTextDocument.ImageResource, url, image)
-                            found_image_tags.append(f'<img src="{url.toString()}" />')
-                except Exception as e:
-                    print(f"Error processing attachment {raw_id}: {e}")
-
-            # B. Обработка data:image/base64 (вставка из Word, браузера или после createMimeData)
-            pattern_b64 = re.compile(r'src=["\']?data:(image/[^;]+);base64,([^"\'\>\s]+)["\']?')
-            
-            for match in pattern_b64.finditer(html):
-                mime_type = match.group(1)
-                b64_data = match.group(2)
+                        if char_format.isImageFormat():
+                            img_fmt = char_format.toImageFormat()
+                            name = img_fmt.name()
+                            
+                            # 1. Попытка noteimg (внутренние копии)
+                            att_id = None
+                            if name.startswith("noteimg://"):
+                                raw_id = name.replace("noteimg://", "")
+                                att_id = self._parse_id_from_name(raw_id)
+                                if att_id:
+                                    try:
+                                        att_data = self.repo.get_attachment(att_id)
+                                        if att_data:
+                                            _, _, old_name, img_bytes, mime = att_data
+                                            new_name = f"copy_{old_name}"
+                                            # Создаем копию вложения
+                                            att_id = self.repo.add_attachment(self.current_note_id, new_name, img_bytes, mime)
+                                            # Регистрируем ресурс
+                                            image = QImage.fromData(img_bytes)
+                                            url = QUrl(f"noteimg://{att_id}")
+                                            self.document().addResource(QTextDocument.ImageResource, url, image)
+                                    except Exception as e:
+                                        print(f"Error copying attachment: {e}")
+                                        att_id = None
+                            
+                            # 2. Попытка base64 или другие ресурсы (QTextDocument сам парсит data:base64)
+                            if not att_id:
+                                image_variant = temp_doc.resource(QTextDocument.ImageResource, QUrl(name))
+                                if isinstance(image_variant, QImage) and not image_variant.isNull():
+                                    try:
+                                        ba = QBuffer()
+                                        ba.open(QIODevice.WriteOnly)
+                                        image_variant.save(ba, "PNG")
+                                        img_bytes = ba.data().data()
+                                        
+                                        att_name = f"pasted_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+                                        att_id = self.repo.add_attachment(self.current_note_id, att_name, img_bytes, "image/png")
+                                        
+                                        url = QUrl(f"noteimg://{att_id}")
+                                        self.document().addResource(QTextDocument.ImageResource, url, image_variant)
+                                    except Exception as e:
+                                        print(f"Error saving pasted image: {e}")
+                            
+                            if att_id:
+                                block_content.append(f'<img src="noteimg://{att_id}" />')
+                                
+                        else:
+                            # Текст: экранируем и вставляем без стилей
+                            text = fragment.text()
+                            if text:
+                                block_content.append(escape(text))
+                    
+                    it += 1
                 
-                try:
-                    img_bytes = base64.b64decode(b64_data)
-                    ext = mime_type.split('/')[-1]
-                    name = f"pasted_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{ext}"
-                    
-                    att_id = self.repo.add_attachment(self.current_note_id, name, img_bytes, mime_type)
-                    
-                    image = QImage.fromData(img_bytes)
-                    url = QUrl(f"noteimg://{att_id}")
-                    self.document().addResource(QTextDocument.ImageResource, url, image)
-                    
-                    found_image_tags.append(f'<img src="noteimg://{att_id}" />')
-                except Exception as e:
-                    print(f"Error importing base64 image: {e}")
-
-            # Если нашли картинки в HTML - вставляем ТОЛЬКО их (игнорируем текст)
-            if found_image_tags:
-                new_source = QMimeData()
-                new_source.setHtml("<br/>".join(found_image_tags))
-                super().insertFromMimeData(new_source)
+                if block_content:
+                    final_html_parts.append("".join(block_content))
+                
+                block = block.next()
+            
+            if final_html_parts:
+                # Вставляем очищенный HTML
+                # Используем insertHtml, чтобы вставились картинки и переносы строк
+                cleaned_html = "<br/>".join(final_html_parts)
+                # Обернуть в span с наследованием, чтобы сбросить текущие стили редактора, если нужно,
+                # но insertHtml обычно использует текущий формат курсора.
+                
+                # Важно: insertHtml вставляет блок. Если мы хотим просто вставить контент инлайн, 
+                # <br> разобьет на блоки.
+                
+                # Используем QMimeData для вставки, чтобы редактор сам разобрался с undo/redo
+                new_mime = QMimeData()
+                new_mime.setHtml(cleaned_html)
+                super().insertFromMimeData(new_mime)
                 return
 
         # ПРИОРИТЕТ 2: Чистое изображение (скриншот, файл)
-        # Срабатывает если в HTML картинок не нашли, но есть Raw Image
+        # Если HTML не обработан (или его нет), но есть Raw Image
         if source.hasImage() and self.repo and self.current_note_id:
             image = source.imageData()
             if isinstance(image, QImage):
@@ -347,7 +380,6 @@ class NoteEditor(QTextEdit):
                 return
 
         # ПРИОРИТЕТ 3: Текст (удаление форматирования)
-        # Если нет картинок ни в HTML, ни в Raw - вставляем текст как plain text
         if source.hasText():
             self.insertPlainText(source.text())
             return
