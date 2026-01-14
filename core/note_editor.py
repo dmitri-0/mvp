@@ -332,27 +332,22 @@ class NoteEditor(QTextEdit):
                                 block_content.append(f'<img src="noteimg://{att_id}" />')
                                 
                         else:
-                            # Текст: экранируем и вставляем без стилей
+                            # Текст: экранируем и вставляем без стилей, заменяя \n на <br/>
                             text = fragment.text()
                             if text:
-                                block_content.append(escape(text))
+                                txt = escape(text).replace("\n", "<br/>")
+                                block_content.append(txt)
                     
                     it += 1
                 
-                if block_content:
-                    final_html_parts.append("".join(block_content))
+                # Добавляем блок. Даже если он пустой (пустая строка между параграфами)
+                final_html_parts.append("".join(block_content))
                 
                 block = block.next()
             
             if final_html_parts:
                 # Вставляем очищенный HTML
-                # Используем insertHtml, чтобы вставились картинки и переносы строк
                 cleaned_html = "<br/>".join(final_html_parts)
-                # Обернуть в span с наследованием, чтобы сбросить текущие стили редактора, если нужно,
-                # но insertHtml обычно использует текущий формат курсора.
-                
-                # Важно: insertHtml вставляет блок. Если мы хотим просто вставить контент инлайн, 
-                # <br> разобьет на блоки.
                 
                 # Используем QMimeData для вставки, чтобы редактор сам разобрался с undo/redo
                 new_mime = QMimeData()
