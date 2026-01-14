@@ -263,93 +263,72 @@ class NoteEditor(QTextEdit):
         return super().canInsertFromMimeData(source)
 
     def insertFromMimeData(self, source):
-        """Вставка данных из буфера обмена (поддержка изображений)"""
+        """Вставка данных из буфера обмена (поддержка изображений, очистка стилей текста)"""
         
+        found_image_tags = []
+
         # ПРИОРИТЕТ 1: Обработка HTML (поддержка noteimg:// и data:base64)
         if source.hasHtml() and self.repo and self.current_note_id:
             html = source.html()
-            current_html = html
-            is_modified = False
             
             # A. Обработка noteimg:// (если скопировано внутри старой версии или без конвертации)
             pattern_noteimg = re.compile(r'src=["\']?noteimg://([0-9\.]+)["\']?')
-            matches_noteimg = pattern_noteimg.findall(current_html)
+            matches_noteimg = pattern_noteimg.findall(html)
             
-            if matches_noteimg:
-                id_map = {}
-                processed_ids = set()
+            processed_ids = set()
+            for raw_id in matches_noteimg:
+                if raw_id in processed_ids: continue
+                processed_ids.add(raw_id)
                 
-                for raw_id in matches_noteimg:
-                    if raw_id in processed_ids: continue
-                    processed_ids.add(raw_id)
+                try:
+                    att_id = self._parse_id_from_name(f"noteimg://{raw_id}")
+                    if not att_id: continue
                     
-                    try:
-                        att_id = self._parse_id_from_name(f"noteimg://{raw_id}")
-                        if not att_id: continue
+                    att_data = self.repo.get_attachment(att_id)
+                    if att_data:
+                        _, _, name, img_bytes, mime = att_data
+                        new_name = f"copy_{name}"
+                        new_att_id = self.repo.add_attachment(self.current_note_id, new_name, img_bytes, mime)
                         
-                        att_data = self.repo.get_attachment(att_id)
-                        if att_data:
-                            _, _, name, img_bytes, mime = att_data
-                            new_name = f"copy_{name}"
-                            new_att_id = self.repo.add_attachment(self.current_note_id, new_name, img_bytes, mime)
-                            
-                            if img_bytes:
-                                image = QImage.fromData(img_bytes)
-                                url = QUrl(f"noteimg://{new_att_id}")
-                                self.document().addResource(QTextDocument.ImageResource, url, image)
-                            
-                            id_map[raw_id] = new_att_id
-                    except Exception as e:
-                        print(f"Error processing attachment {raw_id}: {e}")
-                
-                if id_map:
-                    def noteimg_replacer(match):
-                        full = match.group(0)
-                        old = match.group(1)
-                        if old in id_map:
-                            return full.replace(f"noteimg://{old}", f"noteimg://{id_map[old]}")
-                        return full
-                    current_html = pattern_noteimg.sub(noteimg_replacer, current_html)
-                    is_modified = True
+                        if img_bytes:
+                            image = QImage.fromData(img_bytes)
+                            url = QUrl(f"noteimg://{new_att_id}")
+                            self.document().addResource(QTextDocument.ImageResource, url, image)
+                            found_image_tags.append(f'<img src="{url.toString()}" />')
+                except Exception as e:
+                    print(f"Error processing attachment {raw_id}: {e}")
 
             # B. Обработка data:image/base64 (вставка из Word, браузера или после createMimeData)
             pattern_b64 = re.compile(r'src=["\']?data:(image/[^;]+);base64,([^"\'\>\s]+)["\']?')
             
-            if pattern_b64.search(current_html):
-                def b64_replacer(match):
-                    nonlocal is_modified
-                    mime_type = match.group(1)
-                    b64_data = match.group(2)
+            for match in pattern_b64.finditer(html):
+                mime_type = match.group(1)
+                b64_data = match.group(2)
+                
+                try:
+                    img_bytes = base64.b64decode(b64_data)
+                    ext = mime_type.split('/')[-1]
+                    name = f"pasted_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{ext}"
                     
-                    try:
-                        img_bytes = base64.b64decode(b64_data)
-                        ext = mime_type.split('/')[-1]
-                        name = f"pasted_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{ext}"
-                        
-                        att_id = self.repo.add_attachment(self.current_note_id, name, img_bytes, mime_type)
-                        
-                        image = QImage.fromData(img_bytes)
-                        url = QUrl(f"noteimg://{att_id}")
-                        self.document().addResource(QTextDocument.ImageResource, url, image)
-                        
-                        is_modified = True
-                        return f'src="noteimg://{att_id}"'
-                    except Exception as e:
-                        print(f"Error importing base64 image: {e}")
-                        return match.group(0)
+                    att_id = self.repo.add_attachment(self.current_note_id, name, img_bytes, mime_type)
+                    
+                    image = QImage.fromData(img_bytes)
+                    url = QUrl(f"noteimg://{att_id}")
+                    self.document().addResource(QTextDocument.ImageResource, url, image)
+                    
+                    found_image_tags.append(f'<img src="noteimg://{att_id}" />')
+                except Exception as e:
+                    print(f"Error importing base64 image: {e}")
 
-                current_html = pattern_b64.sub(b64_replacer, current_html)
-            
-            if is_modified:
+            # Если нашли картинки в HTML - вставляем ТОЛЬКО их (игнорируем текст)
+            if found_image_tags:
                 new_source = QMimeData()
-                new_source.setHtml(current_html)
-                if source.hasText():
-                    new_source.setText(source.text())
+                new_source.setHtml("<br/>".join(found_image_tags))
                 super().insertFromMimeData(new_source)
                 return
 
         # ПРИОРИТЕТ 2: Чистое изображение (скриншот, файл)
-        # Срабатывает только если HTML не был обработан или его нет
+        # Срабатывает если в HTML картинок не нашли, но есть Raw Image
         if source.hasImage() and self.repo and self.current_note_id:
             image = source.imageData()
             if isinstance(image, QImage):
@@ -366,6 +345,12 @@ class NoteEditor(QTextEdit):
                 self.document().addResource(QTextDocument.ImageResource, url, image)
                 self.textCursor().insertHtml(f'<img src="{url.toString()}" />')
                 return
+
+        # ПРИОРИТЕТ 3: Текст (удаление форматирования)
+        # Если нет картинок ни в HTML, ни в Raw - вставляем текст как plain text
+        if source.hasText():
+            self.insertPlainText(source.text())
+            return
 
         super().insertFromMimeData(source)
     
