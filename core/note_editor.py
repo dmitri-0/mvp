@@ -265,6 +265,18 @@ class NoteEditor(QTextEdit):
     def insertFromMimeData(self, source):
         """Вставка данных из буфера обмена (поддержка изображений)"""
         
+        # Специальная обработка для заметок из "Буфера обмена":
+        # Очищаем форматирование и удаляем картинки
+        if self._is_clipboard_note():
+            # Извлекаем только plain text
+            if source.hasText():
+                plain_text = source.text()
+                # Вставляем как plain text без форматирования
+                self.textCursor().insertText(plain_text)
+                return
+            # Если текста нет (например, только картинка), ничего не вставляем
+            return
+        
         # ПРИОРИТЕТ 1: Обработка HTML (поддержка noteimg:// и data:base64)
         if source.hasHtml() and self.repo and self.current_note_id:
             html = source.html()
@@ -313,7 +325,7 @@ class NoteEditor(QTextEdit):
                     is_modified = True
 
             # B. Обработка data:image/base64 (вставка из Word, браузера или после createMimeData)
-            pattern_b64 = re.compile(r'src=["\']?data:(image/[^;]+);base64,([^"\'\>\s]+)["\']?')
+            pattern_b64 = re.compile(r'src=["\']?data:(image/[^;]+);base64,([^"\'>\s]+)["\']?')
             
             if pattern_b64.search(current_html):
                 def b64_replacer(match):
