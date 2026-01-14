@@ -197,14 +197,17 @@ class ClipboardMonitor(QObject):
                     else:
                         text = fragment.text()
                         if text:
-                            block_content.append(escape(text))
+                            # Заменяем \n на <br/>, чтобы сохранить переносы внутри фрагмента
+                            # и экранируем
+                            txt = escape(text).replace("\n", "<br/>")
+                            block_content.append(txt)
                             if text.strip():
                                 has_content = True
                 
                 it += 1
             
-            if block_content:
-                final_html_parts.append("".join(block_content))
+            # Добавляем блок. Если пустой - это пустая строка.
+            final_html_parts.append("".join(block_content))
             
             block = block.next()
         
@@ -271,7 +274,7 @@ class ClipboardMonitor(QObject):
         if not saved_something and has_raw_image:
             att_id = self.repo.add_attachment(time_node_id, "clipboard_image.png", image_data, "image/png")
             if has_text:
-                final_html_to_save = f'{escape(text_content)}<br/><img src="noteimg://{att_id}" />'
+                final_html_to_save = f'{escape(text_content).replace(chr(10), "<br/>")}<br/><img src="noteimg://{att_id}" />'
             else:
                 final_html_to_save = f'<img src="noteimg://{att_id}" />'
             saved_something = True
