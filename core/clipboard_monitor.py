@@ -63,36 +63,28 @@ class ClipboardMonitor(QObject):
 
     def _generate_note_title(self, text_content, image_data, has_html):
         """Генерация заголовка для новой заметки на основе содержимого."""
-        # Если есть текст - берем первую значимую строку
         if text_content:
             lines = text_content.split('\n')
             for line in lines:
                 clean_line = line.strip()
-                # Пропускаем пустые строки и разделители
                 if clean_line and clean_line not in ['---', '***', '___', '===']:
-                    # Обрезаем до разумной длины и санитизируем
                     title = clean_line[:80]
-                    # Убираем недопустимые символы для имени файла/заголовка
                     title = re.sub(r'[<>:"/\\|?*\r\n]', '', title)
                     return title if title else datetime.now().strftime("%H:%M:%S")
-            # Если все строки пустые/разделители
             return datetime.now().strftime("%H:%M:%S")
         
-        # Если только изображение - формируем заголовок с данными об изображении
         if image_data:
             try:
                 image = QImage.fromData(image_data)
                 if not image.isNull():
                     width = image.width()
                     height = image.height()
-                    # Определяем формат (по умолчанию PNG)
                     fmt = "PNG"
                     return f"Image {width}x{height} {fmt}"
             except Exception:
                 pass
             return "Image"
         
-        # Fallback - используем время
         return datetime.now().strftime("%H:%M:%S")
 
     def _is_duplicate(self, text_content, image_data):
@@ -106,33 +98,42 @@ class ClipboardMonitor(QObject):
         note_id = last_note[0]
         body_html = last_note[3] or ""
 
-        # Сравнение текста
         if text_content:
-            # Извлекаем простой текст из HTML для сравнения
             doc = QTextDocument()
             doc.setHtml(body_html)
             last_plain_text = doc.toPlainText().strip()
-
             if text_content == last_plain_text:
                 return True
 
-        # Сравнение изображений (по байтам первого вложения)
-        # Note: Это не сработает корректно для смешанного контента (текст + фото), 
-        # но для базового предотвращения спама "одной и той же картинкой" пойдет.
         if image_data and not text_content:
             attachments = self.repo.get_attachments(note_id)
             if attachments and len(attachments) > 0:
-                last_image_bytes = attachments[0][2]  # bytes поле
+                last_image_bytes = attachments[0][2]
                 if image_data == last_image_bytes:
                     return True
 
         return False
 
+    def _parse_id_from_name(self, name: str) -> int | None:
+        """Извлечение числового ID из URL noteimg://"""
+        clean = name.replace("noteimg://", "")
+        try:
+            return int(clean)
+        except ValueError:
+            pass
+        if clean.count('.') == 3:
+            try:
+                parts = list(map(int, clean.split('.')))
+                if len(parts) == 4:
+                    return (parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]
+            except ValueError:
+                pass
+        return None
+
     def _process_mixed_content(self, note_id, html_content):
         """
         Разбирает HTML, сохраняет порядок контента.
         Текст очищается от стилей, картинки сохраняются вложениями.
-        Возвращает (итоговый_html, было_ли_сохранено_что_то).
         """
         doc = QTextDocument()
         doc.setHtml(html_content)
@@ -153,52 +154,61 @@ class ClipboardMonitor(QObject):
                         img_fmt = char_format.toImageFormat()
                         name = img_fmt.name()
                         
-                        # Пытаемся получить изображение из ресурсов документа
-                        # QTextDocument автоматически парсит data:base64 в ресурсы
-                        image_variant = doc.resource(QTextDocument.ImageResource, QUrl(name))
+                        img_bytes = None
+                        mime_type = "image/png"
                         
-                        if isinstance(image_variant, QImage) and not image_variant.isNull():
-                            img = image_variant
-                        else:
-                            # Попытка загрузить по имени (если это локальный путь или что-то еще)
-                            img = QImage(name)
+                        # 1. Попытка noteimg:// (если скопировано из приложения)
+                        if name.startswith("noteimg://"):
+                            att_id = self._parse_id_from_name(name)
+                            if att_id:
+                                att_data = self.repo.get_attachment(att_id)
+                                if att_data:
+                                    _, _, _, img_bytes, mime_type = att_data
 
-                        if not img.isNull():
-                            from PySide6.QtCore import QBuffer, QIODevice
-                            ba = QBuffer()
-                            ba.open(QIODevice.WriteOnly)
-                            img.save(ba, "PNG")
-                            img_bytes = ba.data().data()
-                            
-                            # Генерируем уникальное имя
+                        # 2. Попытка data:image/base64
+                        elif name.startswith("data:image"):
+                            try:
+                                # name example: data:image/png;base64,.....
+                                header, b64 = name.split(",", 1)
+                                if ";base64" in header:
+                                    mime_type = header.split(":")[1].split(";")[0]
+                                    img_bytes = base64.b64decode(b64)
+                            except Exception as e:
+                                print(f"Error parsing data URI: {e}")
+
+                        # 3. Попытка достать ресурс из QTextDocument (если Qt сам распарсил)
+                        if img_bytes is None:
+                            image_variant = doc.resource(QTextDocument.ImageResource, QUrl(name))
+                            if isinstance(image_variant, QImage) and not image_variant.isNull():
+                                from PySide6.QtCore import QBuffer, QIODevice
+                                ba = QBuffer()
+                                ba.open(QIODevice.WriteOnly)
+                                image_variant.save(ba, "PNG")
+                                img_bytes = ba.data().data()
+                                mime_type = "image/png"
+
+                        if img_bytes:
+                            # Сохраняем как новое вложение
                             att_name = f"clip_{datetime.now().strftime('%H%M%S%f')}.png"
-                            att_id = self.repo.add_attachment(note_id, att_name, img_bytes, "image/png")
-                            
-                            block_content.append(f'<img src="noteimg://{att_id}" />')
+                            new_att_id = self.repo.add_attachment(note_id, att_name, img_bytes, mime_type)
+                            block_content.append(f'<img src="noteimg://{new_att_id}" />')
                             has_content = True
+                            
                     else:
                         text = fragment.text()
                         if text:
-                            # Экранируем HTML спецсимволы, чтобы текст остался текстом
                             block_content.append(escape(text))
                             if text.strip():
                                 has_content = True
                 
                 it += 1
             
-            # Собираем блок (строку)
             if block_content:
                 final_html_parts.append("".join(block_content))
             
             block = block.next()
         
-        # Объединяем блоки через <br/> или <p>, чтобы сохранить структуру строк
-        # Используем <pre>-like стиль для простоты или просто <br>
-        # Чтобы сохранить переносы строк, лучше всего соединить <br/>
         final_html = "<br/>".join(final_html_parts)
-        
-        # Оборачиваем в div/pre для сохранения шрифта, если нужно, или оставляем как есть.
-        # Пользователь просил plain text, так что просто текст + картинки + br.
         return final_html, has_content
 
     def _on_clipboard_changed(self):
@@ -208,11 +218,9 @@ class ClipboardMonitor(QObject):
             return
 
         # 1. Получаем данные
-        
         text_content = ""
         if mime_data.hasText():
             text_content = mime_data.text().strip()
-        
         has_text = bool(text_content)
 
         image_data = b""
@@ -235,11 +243,9 @@ class ClipboardMonitor(QObject):
             if html_content:
                 has_html = True
 
-        # Если пусто - выходим
         if not has_text and not has_raw_image and not has_html:
             return
 
-        # Проверка на дубликат (по тексту или сырой картинке)
         if self._is_duplicate(text_content, image_data):
             return
 
@@ -247,35 +253,30 @@ class ClipboardMonitor(QObject):
         clipboard_root_id = self._get_or_create_clipboard_root()
         date_node_id = self._get_or_create_date_node(clipboard_root_id)
         
-        # Генерируем заголовок на основе содержимого
         note_title = self._generate_note_title(text_content, image_data, has_html)
         time_node_id = self.repo.create_note(date_node_id, note_title)
         
         final_html_to_save = ""
         saved_something = False
 
-        # 3. Логика сохранения (Mixed Content: Text + Image)
+        # 3. Логика сохранения (Mixed Content)
         
-        # Если есть HTML, используем его для извлечения текста и картинок в правильном порядке
         if has_html:
             processed_html, has_mixed_content = self._process_mixed_content(time_node_id, html_content)
             if has_mixed_content:
                 final_html_to_save = processed_html
                 saved_something = True
         
-        # Если HTML не дал результата (или его нет), но есть Raw Image
-        # Это может случиться, если скопировали файл картинки или скриншот (HTML часто нет)
-        # Или если HTML был, но пустой/невалидный
+        # Если HTML не сработал (пустой или без картинок и текста), пробуем Raw Image
         if not saved_something and has_raw_image:
             att_id = self.repo.add_attachment(time_node_id, "clipboard_image.png", image_data, "image/png")
-            # Если был и текст, добавляем его (хотя порядок неизвестен, ставим текст сверху)
             if has_text:
                 final_html_to_save = f'{escape(text_content)}<br/><img src="noteimg://{att_id}" />'
             else:
                 final_html_to_save = f'<img src="noteimg://{att_id}" />'
             saved_something = True
         
-        # Если нет картинок, только текст
+        # Если ничего не помогло, но есть текст
         if not saved_something and has_text:
             final_html_to_save = (
                 '<pre style="white-space: pre-wrap; font-family: inherit; margin: 0;">'
@@ -287,23 +288,17 @@ class ClipboardMonitor(QObject):
         # 4. Фиксация результата
         if saved_something and final_html_to_save:
             self.repo.save_note(time_node_id, note_title, final_html_to_save, 0)
-            
-            # Обновляем последнее состояние
             self.last_text = text_content
             self.last_image_data = image_data
-            
             self.clipboard_changed.emit(time_node_id)
         else:
-            # Если ничего не сохранили (пустота), удаляем созданный узел
             self.repo.delete_note(time_node_id)
 
     def enable(self):
-        """Включить мониторинг."""
         self.clipboard.dataChanged.connect(self._on_clipboard_changed)
 
     def disable(self):
-        """Отключить мониторинг."""
         try:
             self.clipboard.dataChanged.disconnect(self._on_clipboard_changed)
         except RuntimeError:
-            pass  # Уже отключено
+            pass
